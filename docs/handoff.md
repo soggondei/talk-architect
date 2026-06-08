@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex
+Claude Code
 
 ---
 
@@ -200,23 +200,42 @@ Yes. `docs/data-schema.md` updated.
 
 ---
 
+## Latest Claude Code Changes (claude/guideline-review-panel)
+
+### 추가
+
+**`components/GuidelineReviewPanel.tsx` — 신규**
+- 카테고리별 그룹핑(11종), 검토 필요 amber 강조, 확정 진행 바
+- source.quote 원문 인용 블록 (section, page 포함)
+- confidence 바 시각화 (0~100%, 색상으로 신뢰도 표현)
+- ai_suggested → user_confirmed 확정 인터랙션 (개별 / 전체)
+- 전체 / 검토 필요 / 확정됨 탭 필터
+
+**`components/FloorPlanCanvas.tsx` — 업데이트**
+- `guidelineItems`, `confirmedGuidelineIds`, `showGuidelinePanel` 상태 추가
+- PDF 업로드 시 `data.guidelineItems` 자동 저장 + 패널 자동 오픈
+- `📋 요건 검토` 버튼 (미확정 개수 뱃지 표시)
+- 캔버스 우측에 GuidelineReviewPanel 슬라이드인
+
+### Schema Changed
+
+No
+
+### Branch
+
+`claude/guideline-review-panel` — PR 머지 후 main에 반영 요청
+
+---
+
 ## Next Work For Claude Code
 
-### 1. GuidelineItem 검토 패널 UX 설계
+### 1. 레이아웃 검증 리포트 템플릿
 
-PDF 파싱 후 추출된 GuidelineItem 목록을 사용자가 검토·확정하는 UI 흐름.
-- ai_suggested → user_confirmed 전환 인터랙션
-- 검토 필요 항목 우선 표시
-- source.quote 원문 표시
-
-### 2. 레이아웃 검증 리포트 템플릿
-
-다음 항목을 포함한 리포트 텍스트 형식 설계:
+다음 항목을 포함한 리포트 텍스트 형식 설계 및 구현:
 - 전체 만족도 점수
 - 필수 인접 미충족 목록
-- Zoning 충돌
-- 동선 문제
-- 수정 우선순위 제안
+- 분리/금지 관계 위반 목록
+- 수정 우선순위 제안 (심각도 순)
 
 ---
 
