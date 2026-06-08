@@ -1,4 +1,4 @@
-import { Room, Connection, ZoneType, ZONE_COLORS, FloorType, FLOORS } from "./floorPlanTypes";
+import { Room, Connection, ZoneType, ZONE_COLORS, FloorType, FLOORS, RelationType as StoredRelationType } from "./floorPlanTypes";
 
 export const CANVAS_W = 920;
 export const CANVAS_H = 620;
@@ -54,7 +54,24 @@ export function getRoomCenter(room: Room) {
   return { cx: room.x + room.width / 2, cy: room.y + room.height / 2 };
 }
 
-export type RelationType = "required" | "preferred" | "none";
+export type RelationType = StoredRelationType | "none";
+
+const RELATION_CYCLE: RelationType[] = ["none", "preferred", "required", "separated", "forbidden"];
+
+export const RELATION_LABELS: Record<RelationType, string> = {
+  none: "없음",
+  preferred: "권장 인접",
+  required: "필수 인접",
+  separated: "분리 권장",
+  forbidden: "인접 금지",
+};
+
+export function relationWeight(type: StoredRelationType): number {
+  if (type === "required") return 1;
+  if (type === "preferred") return 0.6;
+  if (type === "separated") return 0.4;
+  return 0;
+}
 
 export function getRelation(
   fromId: string,
@@ -83,14 +100,20 @@ export function setRelation(
   if (type === "none") return existing;
   return [
     ...existing,
-    { id: `c-${fromId}-${toId}`, fromId, toId, type },
+    {
+      id: `c-${fromId}-${toId}`,
+      fromId,
+      toId,
+      type,
+      weight: relationWeight(type),
+      status: "edited",
+    },
   ];
 }
 
 export function cycleRelation(current: RelationType): RelationType {
-  if (current === "none") return "preferred";
-  if (current === "preferred") return "required";
-  return "none";
+  const currentIndex = RELATION_CYCLE.indexOf(current);
+  return RELATION_CYCLE[(currentIndex + 1) % RELATION_CYCLE.length];
 }
 
 export function isActuallyAdjacent(a: Room, b: Room, gap = 26): boolean {
@@ -115,7 +138,14 @@ export function calcSatisfactionScore(
   connections.forEach((c) => {
     const a = rooms.find((r) => r.id === c.fromId);
     const b = rooms.find((r) => r.id === c.toId);
-    if (a && b && isActuallyAdjacent(a, b, gap)) satisfiedIds.add(c.id);
+    if (!a || !b) return;
+    const adjacent = isActuallyAdjacent(a, b, gap);
+    if ((c.type === "required" || c.type === "preferred") && adjacent) {
+      satisfiedIds.add(c.id);
+    }
+    if ((c.type === "separated" || c.type === "forbidden") && !adjacent) {
+      satisfiedIds.add(c.id);
+    }
   });
   return {
     score: Math.round((satisfiedIds.size / connections.length) * 100),
@@ -139,6 +169,7 @@ export const FLOOR_QUADS: Record<FloorType, { x: number; y: number; w: number; h
 };
 
 export function layoutByFloor(rooms: Room[], _totalArea: number): Room[] {
+  void _totalArea;
   const groups: Partial<Record<FloorType, Room[]>> = {};
   rooms.forEach((r) => {
     const f: FloorType = r.floor ?? '1F';
@@ -231,7 +262,8 @@ export function programToText(rooms: Room[], connections: Connection[]): string 
   const connLines = connections.map((c) => {
     const from = rooms.find((r) => r.id === c.fromId)?.name ?? c.fromId;
     const to = rooms.find((r) => r.id === c.toId)?.name ?? c.toId;
-    return `- ${from} ↔ ${to}: ${c.type === "required" ? "필수 인접" : "권장 인접"}`;
+    const reason = c.reason ? ` (${c.reason})` : "";
+    return `- ${from} ↔ ${to}: ${RELATION_LABELS[c.type]}${reason}`;
   });
   return `[공간 목록]\n${roomLines.join("\n")}\n\n[인접 관계]\n${connLines.join("\n") || "없음"}`;
 }

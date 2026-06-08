@@ -39,12 +39,14 @@ Rules:
 
 ## Relation
 
+Runtime note: the current application still names this structure `Connection` in `lib/floorPlanTypes.ts`, but it now carries the Relation schema fields below.
+
 ```ts
 type Relation = {
   id: string;
   fromId: string;
   toId: string;
-  type: "none" | "preferred" | "required" | "separated" | "forbidden";
+  type: "preferred" | "required" | "separated" | "forbidden";
   weight?: number;
   reason?: string;
   source?: SourceReference[];
@@ -58,6 +60,7 @@ Rules:
 - `preferred`: should be close, but not mandatory.
 - `separated`: should keep distance.
 - `forbidden`: should not directly touch.
+- `none` is a UI-only matrix state and is not stored as a `Connection`.
 - A relation should eventually carry a reason and source evidence.
 
 ## GuidelineItem

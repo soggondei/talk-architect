@@ -120,7 +120,7 @@ export function validateLayoutIssues(
   connections: Connection[],
   satisfiedConnectionIds: Set<string>
 ): ValidationIssue[] {
-  return connections
+  const requiredIssues = connections
     .filter((connection) => connection.type === "required" && !satisfiedConnectionIds.has(connection.id))
     .map((connection) => {
       const from = rooms.find((room) => room.id === connection.fromId);
@@ -136,4 +136,23 @@ export function validateLayoutIssues(
         suggestion: "두 실을 더 가까이 배치하거나 최적화를 다시 실행하세요.",
       } satisfies ValidationIssue;
     });
+
+  const forbiddenIssues = connections
+    .filter((connection) => connection.type === "forbidden" && !satisfiedConnectionIds.has(connection.id))
+    .map((connection) => {
+      const from = rooms.find((room) => room.id === connection.fromId);
+      const to = rooms.find((room) => room.id === connection.toId);
+      return {
+        id: `forbidden-adjacency-detected-${connection.id}`,
+        type: "forbidden_adjacency_detected",
+        severity: "error",
+        title: "금지 인접 발생",
+        description: `${from?.name ?? connection.fromId} - ${to?.name ?? connection.toId} 인접 금지 조건을 위반했습니다.`,
+        relatedRoomIds: [connection.fromId, connection.toId],
+        relatedRelationIds: [connection.id],
+        suggestion: "두 실을 분리 배치하거나 관계 조건의 근거를 다시 확인하세요.",
+      } satisfies ValidationIssue;
+    });
+
+  return [...requiredIssues, ...forbiddenIssues];
 }

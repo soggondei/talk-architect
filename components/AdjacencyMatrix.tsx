@@ -12,6 +12,8 @@ const REL = {
   none:      { symbol: "·",  bg: "#F9FAFB", border: "#E5E7EB", color: "#D1D5DB", label: "없음" },
   preferred: { symbol: "○",  bg: "#FFFBEB", border: "#FCD34D", color: "#CA8A04", label: "권장" },
   required:  { symbol: "●",  bg: "#FEF2F2", border: "#FCA5A5", color: "#DC2626", label: "필수" },
+  separated: { symbol: "◇",  bg: "#EFF6FF", border: "#93C5FD", color: "#2563EB", label: "분리" },
+  forbidden: { symbol: "×",  bg: "#F5F3FF", border: "#C4B5FD", color: "#7C3AED", label: "금지" },
 };
 
 interface Props {
@@ -57,7 +59,7 @@ export default function AdjacencyMatrix({ rooms, connections, onConnectionsChang
             </span>
           ))}
         </div>
-        <span className="ml-auto text-xs text-gray-400">셀 클릭 → 없음 ↔ 권장 ↔ 필수</span>
+        <span className="ml-auto text-xs text-gray-400">셀 클릭 → 없음 → 권장 → 필수 → 분리 → 금지</span>
       </div>
 
       {/* 매트릭스 테이블 */}
@@ -147,7 +149,7 @@ export default function AdjacencyMatrix({ rooms, connections, onConnectionsChang
                               style={{
                                 fontSize: rel === "none" ? 16 : 13,
                                 color: cfg ? cfg.color : REL.none.color,
-                                fontWeight: rel === "required" ? 700 : 400,
+                                fontWeight: rel === "required" || rel === "forbidden" ? 700 : 400,
                               }}
                             >
                               {cfg ? cfg.symbol : REL.none.symbol}

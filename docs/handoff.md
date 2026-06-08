@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Claude Code
+Codex
 
 ---
 
@@ -107,25 +107,22 @@ No
 
 ## Known Issues
 
-### 린트 오류 (기존, Codex 담당)
+### 린트 경고
 
 ```
-hooks/useForceSimulation.ts
-  - `any` 타입 2건 (linkForce distance/strength 콜백)
-  - eslint-disable 주석으로 임시 처리됨
-
 components/BuildingRenderer.ts
   - 미사용 변수 경고
-
-lib/floorPlanUtils.ts
-  - _totalArea 파라미터 미사용 경고 (언더스코어로 억제 중)
 ```
 
-### 스키마 갭 (Codex 담당)
+### 스키마 갭
 
-현재 `Connection` 타입이 `data-schema.md`의 `Relation` 전체를 구현하지 못함:
-- 미구현: `reason`, `source: SourceReference[]`, `status`
-- 미구현 타입: `separated`, `forbidden` (현재 required/preferred만 존재)
+`Connection` 타입은 이제 Relation 스키마의 핵심 필드를 구현함:
+- 구현됨: `reason`, `source: SourceReference[]`, `status`, `weight`
+- 구현됨 타입: `required`, `preferred`, `separated`, `forbidden`
+
+남은 갭:
+- `GuidelineItem` 검토/확정 UI 미구현
+- PDF 파싱 결과의 `relations[]`를 캔버스 `Connection[]`으로 직접 연결하는 흐름 미구현
 
 ### API 연동 미완 (Codex 담당)
 
@@ -141,34 +138,65 @@ lib/floorPlanUtils.ts
 
 우선순위 순:
 
-### 1. Connection → Relation 스키마 확장
-
-`lib/floorPlanTypes.ts`의 `Connection` 타입에 다음 필드 추가:
-
-```ts
-reason?: string;
-source?: SourceReference[];
-status?: "ai_suggested" | "user_confirmed" | "edited" | "conflict";
-// 타입 확장: 기존 "required" | "preferred" 에 "separated" | "forbidden" 추가
-```
-
-`SourceReference` 타입도 `lib/floorPlanTypes.ts`에 추가.
-`data-schema.md`와 `lib/guidelineExtractionPrompt.ts`에 이미 타입 정의되어 있으므로 import 가능.
-
-### 2. /api/parse-pdf 라우트를 새 프롬프트로 교체
+### 1. /api/parse-pdf 라우트를 새 프롬프트로 교체
 
 `lib/guidelineExtractionPrompt.ts`의 `GUIDELINE_EXTRACTION_PROMPT`를 import하여
 기존 `EXTRACT_PROMPT`를 대체. 응답 파싱 로직을 3종 JSON에 맞게 업데이트.
 
-### 3. 전체 검증 패널 (drawer 또는 전용 뷰)
+### 2. 전체 검증 패널 (drawer 또는 전용 뷰)
 
 현재 사이드바에 상위 3개만 표시 중. 전체 ValidationIssue 목록을 볼 수 있는
 패널/드로어 추가. `lib/programValidation.ts`의 `validateSpaceProgram` 결과 활용.
 
-### 4. 린트 오류 수정
+### 3. 남은 린트 경고 정리
 
-`hooks/useForceSimulation.ts`의 `any` 타입을 구체적 D3 타입으로 교체.
 `components/BuildingRenderer.ts` 미사용 변수 제거.
+
+---
+
+## Latest Codex Changes (codex/relation-schema)
+
+### 추가/변경
+
+**`lib/floorPlanTypes.ts` — Connection 스키마 확장**
+- `ItemStatus` 추가
+- `SourceReference` 추가
+- `RelationType` 추가: `required | preferred | separated | forbidden`
+- `Connection`에 `weight`, `reason`, `source`, `status` 필드 추가
+
+**`lib/floorPlanUtils.ts` — 관계 유틸 확장**
+- UI-only `none` 상태 포함 Relation cycle 정의
+- `RELATION_LABELS` 추가
+- `relationWeight()` 추가
+- `setRelation()`이 weight/status를 함께 저장
+- `calcSatisfactionScore()`가 분리/금지 관계는 “인접하지 않음”을 만족으로 계산
+- `programToText()`가 relation reason을 분석 컨텍스트에 포함
+
+**`components/AdjacencyMatrix.tsx`**
+- 관계 매트릭스에 `분리`, `금지` 상태 추가
+- 클릭 순서: 없음 → 권장 → 필수 → 분리 → 금지
+
+**`components/FloorPlanCanvas.tsx`**
+- 연결선 클릭도 동일한 관계 cycle 사용
+- `separated`, `forbidden` 시각화 색상/라벨 추가
+- 금지 인접 미충족 시 경고 라벨 표시
+- PDF/CSV 생성 관계에 status 부여
+
+**`hooks/useForceSimulation.ts`**
+- `separated`, `forbidden` 관계는 D3 link attraction에서 제외
+- 기존 lint 오류였던 ref render access와 `any` link callbacks 수정
+
+**`lib/programValidation.ts`**
+- `forbidden` 관계가 실제 인접할 경우 `forbidden_adjacency_detected` 이슈 생성
+
+### Schema Changed
+
+Yes. `docs/data-schema.md` updated.
+
+### Verified
+
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed with warnings only.
 
 ---
 

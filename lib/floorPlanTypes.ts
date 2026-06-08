@@ -19,6 +19,17 @@ export const FLOOR_INFO: Record<FloorType, { label: string; shortLabel: string; 
 
 export const FLOORS: FloorType[] = ['B1', '1F', '2F', '3F'];
 
+export type ItemStatus = 'ai_suggested' | 'user_confirmed' | 'edited' | 'conflict';
+
+export interface SourceReference {
+  documentId?: string;
+  documentName?: string;
+  page?: number;
+  section?: string;
+  quote?: string;
+  confidence?: number;
+}
+
 export interface Room {
   id: string;
   name: string;
@@ -38,8 +49,14 @@ export interface Connection {
   id: string;
   fromId: string;
   toId: string;
-  type: 'required' | 'preferred'; // 필수 인접 / 권장 인접
+  type: RelationType;
+  weight?: number;
+  reason?: string;
+  source?: SourceReference[];
+  status?: ItemStatus;
 }
+
+export type RelationType = 'required' | 'preferred' | 'separated' | 'forbidden';
 
 export interface SpaceProgram {
   rooms: Room[];
