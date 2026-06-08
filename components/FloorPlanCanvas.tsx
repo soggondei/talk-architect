@@ -13,6 +13,8 @@ import {
 } from "@/lib/floorPlanUtils";
 import { parseRoomCSV, parsedRoomsToLayout, parseMatrixCSV } from "@/lib/csvParser";
 import { useForceSimulation } from "@/hooks/useForceSimulation";
+import { GuidelineItem } from "@/lib/guidelineExtractionPrompt";
+import GuidelineReviewPanel from "@/components/GuidelineReviewPanel";
 
 interface Props {
   rooms: Room[];
@@ -22,6 +24,71 @@ interface Props {
 }
 
 type Mode = "select" | "connect" | "pin" | "delete";
+
+type PdfGuidelineItem = {
+  id: string;
+  category: string;
+  title: string;
+  content: string;
+};
+
+type PdfRoom = {
+  id?: string;
+  name: string;
+  area: number;
+  count?: number;
+  totalArea?: number;
+  zone: ZoneType;
+  floor?: FloorType | null;
+  notes?: string | null;
+  adjacency?: string[];
+  required?: string[];
+};
+
+type PdfRelation = {
+  id?: string;
+  fromId: string;
+  toId: string;
+  type: "none" | Connection["type"];
+  weight?: number;
+  reason?: string;
+  source?: Connection["source"];
+  status?: Connection["status"];
+};
+
+type PdfParseResult = {
+  documentName?: string;
+  projectName?: string;
+  totalArea?: number | null;
+  guidelineItems?: PdfGuidelineItem[];
+  relations?: PdfRelation[];
+  floorComposition?: {
+    summary: string;
+    floors: Partial<Record<FloorType, string | null>>;
+    circulationNotes?: string | null;
+  } | null;
+  rooms: PdfRoom[];
+};
+
+function buildFloorCompositionFromGuidelines(items: PdfGuidelineItem[] = []): PdfParseResult["floorComposition"] {
+  const floorItems = items.filter((item) => item.category === "floor");
+  if (!floorItems.length) return null;
+
+  return {
+    summary: floorItems.map((item) => item.content).slice(0, 3).join(" "),
+    floors: {
+      B1: floorItems.find((item) => /지하|B1/i.test(`${item.title} ${item.content}`))?.content ?? null,
+      "1F": floorItems.find((item) => /1층|1F/i.test(`${item.title} ${item.content}`))?.content ?? null,
+      "2F": floorItems.find((item) => /2층|2F/i.test(`${item.title} ${item.content}`))?.content ?? null,
+      "3F": floorItems.find((item) => /3층|3F|상층|지상/i.test(`${item.title} ${item.content}`))?.content ?? null,
+    },
+    circulationNotes: floorItems.find((item) => /동선|연계|수직/i.test(`${item.title} ${item.content}`))?.content ?? null,
+  };
+}
+
+function isStoredRelationType(type: PdfRelation["type"]): type is Connection["type"] {
+  return type === "required" || type === "preferred" || type === "separated" || type === "forbidden";
+}
 
 export default function FloorPlanCanvas({
   rooms, connections, onRoomsChange, onConnectionsChange,
@@ -46,6 +113,9 @@ export default function FloorPlanCanvas({
     } | null;
   } | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [guidelineItems, setGuidelineItems] = useState<GuidelineItem[]>([]);
+  const [confirmedGuidelineIds, setConfirmedGuidelineIds] = useState<Set<string>>(new Set());
+  const [showGuidelinePanel, setShowGuidelinePanel] = useState(false);
 
   const sim = useForceSimulation(onRoomsChange);
 
@@ -260,39 +330,34 @@ export default function FloorPlanCanvas({
           throw new Error(err.error || "PDF 파싱 실패");
         }
 
-        const data = await res.json() as {
-          projectName?: string;
-          totalArea?: number;
-          floorComposition?: {
-            summary: string;
-            floors: Partial<Record<FloorType, string | null>>;
-            circulationNotes?: string | null;
-          } | null;
-          rooms: {
-            id?: string;
-            name: string;
-            area: number;
-            count?: number;
-            zone: ZoneType;
-            floor?: FloorType | null;
-            adjacency?: string[];
-            required?: string[];
-          }[];
-        };
+        const data = await res.json() as PdfParseResult;
 
         if (!data.rooms?.length) throw new Error("공간 정보를 찾을 수 없습니다");
 
-        const sumArea = data.rooms.reduce((s, r) => s + r.area * (r.count ?? 1), 0);
+        const safeTotalArea = (r: PdfRoom) => {
+          const count = r.count ?? 1;
+          if (typeof r.totalArea === "number" && r.totalArea > 0) return r.totalArea;
+          if (typeof r.area === "number" && r.area > 0) return r.area * count;
+          return 10 * count;
+        };
+        const safeArea = (r: PdfRoom) => {
+          if (typeof r.area === "number" && r.area > 0) return r.area;
+          const count = r.count ?? 1;
+          if (typeof r.totalArea === "number" && r.totalArea > 0) return r.totalArea / count;
+          return 10;
+        };
+        const sumArea = data.rooms.reduce((s, r) => s + safeTotalArea(r), 0);
         const newRooms: Room[] = data.rooms.map((r, i) => ({
           id: r.id || `pdf-r${i}`,
           name: r.name,
-          area: r.area,
+          area: safeArea(r),
           count: r.count ?? 1,
-          totalArea: r.area * (r.count ?? 1),
+          totalArea: safeTotalArea(r),
           zone: r.zone,
           floor: r.floor ?? undefined,
           x: 0, y: 0,
-          ...computeSize(r.area * (r.count ?? 1), sumArea),
+          notes: r.notes ?? undefined,
+          ...computeSize(safeTotalArea(r), sumArea),
         }));
 
         const hasFloors = newRooms.some((r) => r.floor);
@@ -300,38 +365,71 @@ export default function FloorPlanCanvas({
           ? layoutByFloor(newRooms, sumArea)
           : autoLayout(newRooms, sumArea);
 
+        const floorComposition =
+          data.floorComposition ?? buildFloorCompositionFromGuidelines(data.guidelineItems);
+
         // Store PDF analysis summary
         setPDFSummary({
-          projectName: data.projectName,
-          floorComposition: data.floorComposition ?? null,
+          projectName: data.projectName ?? data.documentName,
+          floorComposition,
         });
-        setShowSummary(!!data.floorComposition);
+        setShowSummary(!!floorComposition);
+
+        // Store GuidelineItems (새 프롬프트 포맷) and open review panel
+        if (data.guidelineItems?.length) {
+          setGuidelineItems(data.guidelineItems as GuidelineItem[]);
+          setConfirmedGuidelineIds(new Set());
+          setShowGuidelinePanel(true);
+        }
 
         const seen = new Set<string>();
         const newConns: Connection[] = [];
-        data.rooms.forEach((r, i) => {
-          if (!r.adjacency?.length) return;
-          const fromId = laidOut[i]?.id;
-          if (!fromId) return;
-          r.adjacency.forEach((adjName) => {
-            const toRoom = laidOut.find(
-              (lr) => lr.name === adjName || lr.name.includes(adjName) || adjName.includes(lr.name)
-            );
-            if (!toRoom || toRoom.id === fromId) return;
-            const key = [fromId, toRoom.id].sort().join("|");
+
+        if (data.relations?.length) {
+          data.relations.forEach((relation, i) => {
+            if (!isStoredRelationType(relation.type)) return;
+            const from = laidOut.find((room) => room.id === relation.fromId);
+            const to = laidOut.find((room) => room.id === relation.toId);
+            if (!from || !to || from.id === to.id) return;
+            const key = [from.id, to.id].sort().join("|");
             if (seen.has(key)) return;
             seen.add(key);
-            const isReq = (r.required ?? []).some(
-              (req) => req === adjName || adjName.includes(req) || req.includes(adjName)
-            );
             newConns.push({
-              id: `pdf-c-${fromId}-${toRoom.id}`,
-              fromId, toId: toRoom.id,
-              type: isReq ? "required" : "preferred",
-              status: "ai_suggested",
+              id: relation.id ?? `pdf-c-${i}-${from.id}-${to.id}`,
+              fromId: from.id,
+              toId: to.id,
+              type: relation.type,
+              weight: relation.weight,
+              reason: relation.reason,
+              source: relation.source,
+              status: relation.status ?? "ai_suggested",
             });
           });
-        });
+        } else {
+          data.rooms.forEach((r, i) => {
+            if (!r.adjacency?.length) return;
+            const fromId = laidOut[i]?.id;
+            if (!fromId) return;
+            r.adjacency.forEach((adjName) => {
+              const toRoom = laidOut.find(
+                (lr) => lr.name === adjName || lr.name.includes(adjName) || adjName.includes(lr.name)
+              );
+              if (!toRoom || toRoom.id === fromId) return;
+              const key = [fromId, toRoom.id].sort().join("|");
+              if (seen.has(key)) return;
+              seen.add(key);
+              const isReq = (r.required ?? []).some(
+                (req) => req === adjName || adjName.includes(req) || req.includes(adjName)
+              );
+              newConns.push({
+                id: `pdf-c-${fromId}-${toRoom.id}`,
+                fromId, toId: toRoom.id,
+                type: isReq ? "required" : "preferred",
+                status: "ai_suggested",
+              });
+            });
+          });
+        }
 
         onRoomsChange(laidOut);
         onConnectionsChange(newConns);
@@ -533,6 +631,25 @@ export default function FloorPlanCanvas({
 
           {/* Right side buttons */}
           <div className="ml-auto flex items-center gap-1">
+            {/* GuidelineItem 검토 패널 */}
+            {guidelineItems.length > 0 && (
+              <button
+                onClick={() => setShowGuidelinePanel((v) => !v)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  showGuidelinePanel
+                    ? "bg-violet-600 text-white border-violet-700"
+                    : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100"
+                }`}
+                title="지침서 요건 검토"
+              >
+                📋 요건 검토
+                {confirmedGuidelineIds.size < guidelineItems.length && (
+                  <span className="ml-0.5 px-1 py-0.5 rounded-full text-[9px] font-bold bg-amber-400 text-white">
+                    {guidelineItems.length - confirmedGuidelineIds.size}
+                  </span>
+                )}
+              </button>
+            )}
             {/* PDF 분석 결과 보기 */}
             {pdfSummary?.floorComposition && (
               <button
@@ -1018,6 +1135,18 @@ export default function FloorPlanCanvas({
               )}
             </div>
           </div>
+        )}
+
+        {/* GuidelineItem 검토 패널 */}
+        {showGuidelinePanel && guidelineItems.length > 0 && (
+          <GuidelineReviewPanel
+            items={guidelineItems}
+            confirmedIds={confirmedGuidelineIds}
+            onConfirm={(id) => setConfirmedGuidelineIds((prev) => new Set([...prev, id]))}
+            onUnconfirm={(id) => setConfirmedGuidelineIds((prev) => { const next = new Set(prev); next.delete(id); return next; })}
+            onClose={() => setShowGuidelinePanel(false)}
+            projectName={pdfSummary?.projectName}
+          />
         )}
 
         {/* Stats overlay */}
