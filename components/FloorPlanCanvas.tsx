@@ -9,6 +9,7 @@ import {
   setRelation, getRelation, cycleRelation,
   calcSatisfactionScore,
   computeSize, autoLayout,
+  RELATION_LABELS,
 } from "@/lib/floorPlanUtils";
 import { parseRoomCSV, parsedRoomsToLayout, parseMatrixCSV } from "@/lib/csvParser";
 import { useForceSimulation } from "@/hooks/useForceSimulation";
@@ -225,12 +226,15 @@ export default function FloorPlanCanvas({
         onConnectionsChange(connections.filter((c) => c.id !== conn.id));
         return;
       }
+      const next = cycleRelation(conn.type);
       onConnectionsChange(
-        connections.map((c) =>
-          c.id === conn.id
-            ? { ...c, type: c.type === "required" ? "preferred" : "required" }
-            : c
-        )
+        next === "none"
+          ? connections.filter((c) => c.id !== conn.id)
+          : connections.map((c) =>
+              c.id === conn.id
+                ? { ...c, type: next, status: "edited" }
+                : c
+            )
       );
     },
     [mode, connections, onConnectionsChange]
@@ -324,6 +328,7 @@ export default function FloorPlanCanvas({
               id: `pdf-c-${fromId}-${toRoom.id}`,
               fromId, toId: toRoom.id,
               type: isReq ? "required" : "preferred",
+              status: "ai_suggested",
             });
           });
         });
@@ -396,6 +401,7 @@ export default function FloorPlanCanvas({
         const newConns: Connection[] = parsed.map((c, i) => ({
           id: `csv-c-${i}-${c.fromId}-${c.toId}`,
           fromId: c.fromId, toId: c.toId, type: c.type,
+          status: "user_confirmed",
         }));
         onConnectionsChange(newConns);
       };
@@ -766,13 +772,30 @@ export default function FloorPlanCanvas({
 
             const isSatisfied = satisfiedIds.has(conn.id);
             const isReq = conn.type === "required";
+            const isSeparated = conn.type === "separated";
+            const isForbidden = conn.type === "forbidden";
             const isHov = hoveredConn === conn.id;
-            const color = isSatisfied ? "#16A34A" : isReq ? "#F59E0B" : "#9CA3AF";
+            const color = isSatisfied
+              ? "#16A34A"
+              : isForbidden
+                ? "#7C3AED"
+                : isSeparated
+                  ? "#2563EB"
+                  : isReq
+                    ? "#F59E0B"
+                    : "#9CA3AF";
             const { cx: x1, cy: y1 } = getRoomCenter(from);
             const { cx: x2, cy: y2 } = getRoomCenter(to);
             const mx = (x1 + x2) / 2;
             const my = (y1 + y2) / 2;
-            const label = isSatisfied ? (isReq ? "✓ 필수" : "✓ 권장") : (isReq ? "⚠ 필수" : "권장");
+            const relationLabel = RELATION_LABELS[conn.type].replace(" 인접", "");
+            const label = isSatisfied
+              ? `✓ ${relationLabel}`
+              : isReq
+                ? "⚠ 필수"
+                : isForbidden
+                  ? "⚠ 금지"
+                  : relationLabel;
 
             return (
               <g key={conn.id}>
@@ -785,13 +808,13 @@ export default function FloorPlanCanvas({
                 />
                 <line x1={x1} y1={y1} x2={x2} y2={y2}
                   stroke={color}
-                  strokeWidth={isHov ? 3.5 : isReq ? 2.5 : 1.5}
-                  strokeDasharray={!isSatisfied && !isReq ? "6 4" : "none"}
+                  strokeWidth={isHov ? 3.5 : isReq || isForbidden ? 2.5 : 1.5}
+                  strokeDasharray={isSeparated || isForbidden || (!isSatisfied && !isReq) ? "6 4" : "none"}
                   strokeLinecap="round"
                   opacity={isSatisfied ? 1 : 0.72}
                   style={{ pointerEvents: "none" }}
                 />
-                {(isHov || (!isSatisfied && isReq && !multiFloor)) && (
+                {(isHov || (!isSatisfied && (isReq || isForbidden) && !multiFloor)) && (
                   <>
                     <rect x={mx - 18} y={my - 8} width={36} height={15} rx={4}
                       fill="white" stroke={color} strokeWidth={1} style={{ pointerEvents: "none" }} />

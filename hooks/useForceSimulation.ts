@@ -6,6 +6,11 @@ import { Room, Connection, ZoneType, FloorType } from "@/lib/floorPlanTypes";
 import { CANVAS_W, CANVAS_H, FLOOR_QUADS } from "@/lib/floorPlanUtils";
 
 type SimNode = Room & d3.SimulationNodeDatum;
+type SimLink = d3.SimulationLinkDatum<SimNode> & {
+  source: string | SimNode;
+  target: string | SimNode;
+  type: Connection["type"];
+};
 
 // Zones that should align vertically across floors (same-name sync)
 const SYNC_ZONES: ZoneType[] = ["core", "circulation"];
@@ -16,7 +21,10 @@ export function useForceSimulation(onRoomsChange: (rooms: Room[]) => void) {
   const [isRunning, setIsRunning] = useState(false);
   const [linkStrength, setLinkStrength] = useState(1.0);
   const strengthRef = useRef(linkStrength);
-  strengthRef.current = linkStrength;
+
+  useEffect(() => {
+    strengthRef.current = linkStrength;
+  }, [linkStrength]);
 
   const stop = useCallback(() => {
     simRef.current?.stop();
@@ -77,31 +85,31 @@ export function useForceSimulation(onRoomsChange: (rooms: Room[]) => void) {
       nodesRef.current = nodes;
 
       // In multi-floor mode, only use same-floor connections for link force
+      const attractiveConns = connections.filter((c) => c.type === "required" || c.type === "preferred");
       const activeConns = multiFloor
-        ? connections.filter((c) => {
+        ? attractiveConns.filter((c) => {
             const from = rooms.find((r) => r.id === c.fromId);
             const to = rooms.find((r) => r.id === c.toId);
             return from && to && (from.floor ?? "1F") === (to.floor ?? "1F");
           })
-        : connections;
+        : attractiveConns;
 
-      const rawLinks = activeConns.map((c) => ({
+      const rawLinks: SimLink[] = activeConns.map((c) => ({
         source: c.fromId,
         target: c.toId,
         type: c.type,
       }));
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const linkForce = (d3.forceLink(rawLinks) as any)
+      const linkForce = d3.forceLink<SimNode, SimLink>(rawLinks)
         .id((d: SimNode) => d.id)
-        .distance((link: any) => {
+        .distance((link) => {
           const s = link.source as SimNode;
           const t = link.target as SimNode;
           if (typeof s === "string" || typeof t === "string") return 80;
           const touch = (s.width + s.height + t.width + t.height) / 4;
           return link.type === "required" ? touch * 1.05 : touch * 1.8;
         })
-        .strength((link: any) =>
+        .strength((link) =>
           link.type === "required"
             ? strengthRef.current
             : strengthRef.current * 0.22
