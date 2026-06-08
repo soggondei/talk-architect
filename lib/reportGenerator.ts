@@ -106,7 +106,6 @@ function buildAdjacencySection(
   issues: ValidationIssue[],
   rooms: Room[],
   connections: Connection[],
-  score: number,
 ): ReportSection {
   const requiredConns = connections.filter((c) => c.type === "required");
   const missingIssues = issues.filter((i) => i.type === "required_adjacency_missing");
@@ -366,7 +365,7 @@ export function generateLayoutReport(
 
   const sections = [
     buildLayoutSection(rooms, connections, satisfactionScore, grade),
-    buildAdjacencySection(issues, rooms, connections, satisfactionScore),
+    buildAdjacencySection(issues, rooms, connections),
     buildSeparationSection(issues, rooms, connections),
     buildAreaSection(issues),
   ];

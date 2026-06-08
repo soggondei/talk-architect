@@ -38,6 +38,7 @@ interface Props {
   items: GuidelineItem[];
   confirmedIds: Set<string>;
   onConfirm: (id: string) => void;
+  onConfirmMany?: (ids: string[]) => void;
   onUnconfirm: (id: string) => void;
   onClose: () => void;
   projectName?: string;
@@ -180,6 +181,7 @@ export default function GuidelineReviewPanel({
   items,
   confirmedIds,
   onConfirm,
+  onConfirmMany,
   onUnconfirm,
   onClose,
   projectName,
@@ -220,9 +222,9 @@ export default function GuidelineReviewPanel({
   };
 
   const confirmAll = () => {
-    filteredItems
-      .filter((i) => !confirmedIds.has(i.id))
-      .forEach((i) => onConfirm(i.id));
+    const ids = filteredItems.filter((i) => !confirmedIds.has(i.id)).map((i) => i.id);
+    if (onConfirmMany) onConfirmMany(ids);
+    else ids.forEach((id) => onConfirm(id));
   };
 
   return (

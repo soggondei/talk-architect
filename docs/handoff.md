@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Claude Code (branch: claude/report-template)
+Codex (branch: codex/guideline-data-flow)
 
 ---
 
@@ -36,7 +36,7 @@ data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업
 
 ---
 
-## 현재 파일 상태 (main 기준, 로컬 main은 origin/main보다 5 commits ahead)
+## 현재 파일 상태 (codex/guideline-data-flow 기준)
 
 ### 핵심 타입 및 유틸
 
@@ -360,23 +360,51 @@ No. 신규 파일만 추가, 기존 타입 변경 없음.
 
 ## Next Work For Codex
 
-### 1. `GuidelineItem` 확정값을 실제 데이터 흐름에 반영
-
-현재 `GuidelineReviewPanel`에서 확정은 UI 상태에만 반영됨.
-다음 단계:
-- 확정된 `GuidelineItem`의 면적/관계 값이 `rooms[]`, `connections[]`에 자동 반영되는 흐름 구현
-- 예: `room_area` 항목 확정 → 해당 room의 `totalArea` 업데이트 제안
-- 예: `adjacency` 항목 확정 → 해당 `Connection`의 `status: "user_confirmed"` 반영
-
-### 2. PDF 추출 저장/복원
-
-- 전체 플랜 JSON 내보내기에 `guidelineItems[]` + `confirmedGuidelineIds` 포함
-- JSON 불러오기 시 확정 상태도 복원
-
-### 3. `ValidationReportPanel`에서 리포트 PDF 내보내기
+### 1. `ValidationReportPanel`에서 리포트 PDF 내보내기
 
 - `plainText`를 사용해 PDF/Word 내보내기 기능 추가
 - 가능하면 섹션 구조 유지
+
+### 2. 확정 GuidelineItem의 면적값 반영 UI
+
+- 현재 확정된 `GuidelineItem`은 관련 `rooms[]`, `connections[]`의 `status`에 반영됨
+- 다음 단계: `room_area`, `room_count`, `floor` 항목 확정 시 기존 room 값과 다를 경우 “적용/무시” 선택 UI 추가
+- AI 값이 사용자 확정값을 자동 덮어쓰지 않도록 diff preview 필요
+
+---
+
+## Latest Codex Changes (codex/guideline-data-flow)
+
+### 추가/변경
+
+**`lib/floorPlanTypes.ts`**
+- `Room`에 `source?: SourceReference[]`, `status?: ItemStatus` 추가
+- `docs/data-schema.md`의 Room 스키마와 구현 타입을 맞춤
+
+**`components/FloorPlanCanvas.tsx`**
+- GuidelineItem 확정/확정 취소 시 `guidelineItems[].status`를 함께 업데이트
+- 확정된 GuidelineItem의 `appliesToRoomIds` 대상 room은 `status: "user_confirmed"`로 반영
+- 확정된 GuidelineItem의 `appliesToRelationIds` 대상 connection은 `status: "user_confirmed"`로 반영
+- PDF에서 추출된 room의 `source`, `status`를 보존
+- 전체 플랜 JSON 내보내기에 `guidelineItems[]`, `confirmedGuidelineIds`, `pdfSummary` 포함
+- JSON 불러오기(`📥 JSON`) 추가: rooms/connections, pinnedIds, multiFloor, GuidelineItem 확정 상태, PDF 요약 복원
+
+**`components/GuidelineReviewPanel.tsx`**
+- “목록 전체 확정”이 여러 항목을 한 번에 안정적으로 확정하도록 `onConfirmMany` 콜백 추가
+
+**`components/BuildingRenderer.ts`, `lib/reportGenerator.ts`**
+- 타입 검사/린트에서 발견된 소스 오류와 경고 정리
+
+### Schema Changed
+
+Yes. `Room` 구현 타입이 기존 `docs/data-schema.md`의 `status/source` 필드와 일치하도록 확장됨.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
+- `npx tsc --noEmit` passed after moving duplicate generated `.next/types/cache-life.d 2.ts` cache file to `/private/tmp/talk-architect-next-types-backup/`.
+- Browser check on `http://localhost:3002/` passed.
+- Sample input generated rooms, validation/report UI stayed visible, and both `💾 JSON` / `📥 JSON` controls appeared.
 
 ---
 
