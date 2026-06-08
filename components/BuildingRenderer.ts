@@ -139,30 +139,30 @@ export class BuildingRenderer {
     }
 
     // 각 층 건물 본체
-    for (let f = piloti ? pilotiFloors : 0; f < floors; f++) {
+    const startFloor = piloti ? pilotiFloors : 0;
+    for (let f = startFloor; f < floors; f++) {
       const floorY = f * heightPerFloor;
-      const isCourtFloor = hasCourt && courtWidth && courtDepth && f >= 1;
+      // 모든 층에 중정 적용 (f >= 0)
+      const isCourtFloor = hasCourt && courtWidth && courtDepth;
 
       if (isCourtFloor) {
         // 중정 있는 층: 4면 벽으로 분리
         const cW = courtWidth!;
         const cD = courtDepth!;
-        const wallThick = 0.3;
 
         // 앞벽
-        const frontW = width;
         const frontD = (depth - cD) / 2;
-        this.addBox(frontW, heightPerFloor, frontD, wallMat, 0, floorY + heightPerFloor / 2, -(cD / 2 + frontD / 2));
+        this.addBox(width, heightPerFloor, frontD, wallMat, 0, floorY + heightPerFloor / 2, -(cD / 2 + frontD / 2));
         // 뒷벽
-        this.addBox(frontW, heightPerFloor, frontD, wallMat, 0, floorY + heightPerFloor / 2, cD / 2 + frontD / 2);
+        this.addBox(width, heightPerFloor, frontD, wallMat, 0, floorY + heightPerFloor / 2, cD / 2 + frontD / 2);
         // 좌벽
         const sideW = (width - cW) / 2;
         this.addBox(sideW, heightPerFloor, cD, wallMat, -(cW / 2 + sideW / 2), floorY + heightPerFloor / 2, 0);
         // 우벽
         this.addBox(sideW, heightPerFloor, cD, wallMat, cW / 2 + sideW / 2, floorY + heightPerFloor / 2, 0);
-        // 중정 바닥 슬래브
-        if (f === (piloti ? pilotiFloors : 1)) {
-          const slabGeo = new THREE.BoxGeometry(cW - wallThick, 0.1, cD - wallThick);
+        // 중정 바닥 슬래브 — 첫 번째 중정 층에만 생성
+        if (f === startFloor) {
+          const slabGeo = new THREE.BoxGeometry(cW - 0.3, 0.1, cD - 0.3);
           const slabMat = new THREE.MeshLambertMaterial({ color: "#c0b8a8" });
           const slab = new THREE.Mesh(slabGeo, slabMat);
           slab.position.set(0, floorY, 0);
