@@ -123,7 +123,11 @@ function ItemCard({
 
         {/* 확정 버튼 */}
         <button
-          onClick={(e) => { e.stopPropagation(); confirmed ? onUnconfirm() : onConfirm(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirmed) onUnconfirm();
+            else onConfirm();
+          }}
           className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors ${
             confirmed
               ? "bg-green-500 text-white hover:bg-green-600"
@@ -203,7 +207,8 @@ export default function GuidelineReviewPanel({
   const toggleCategory = (cat: string) => {
     setExpandedCategories((prev) => {
       const next = new Set(prev);
-      next.has(cat) ? next.delete(cat) : next.add(cat);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
       return next;
     });
   };

@@ -107,12 +107,9 @@ No
 
 ## Known Issues
 
-### 린트 경고
+### 린트 상태
 
-```
-components/BuildingRenderer.ts
-  - 미사용 변수 경고
-```
+`npm run lint` 통과.
 
 ### 스키마 갭
 
@@ -142,14 +139,32 @@ components/BuildingRenderer.ts
 PDF 파싱 후 추출된 `guidelineItems[]`를 보관하고, 사용자가 `ai_suggested` 항목을 확인해
 `user_confirmed`로 전환할 수 있는 패널 구현.
 
-### 2. 남은 린트 경고 정리
-
-`components/BuildingRenderer.ts` 미사용 변수 제거.
-
-### 3. 타입 검사 캐시 정리
+### 2. 타입 검사 캐시 정리
 
 `.next/types/* 2.ts` 중복 생성 캐시가 있으면 `npx tsc --noEmit`가 소스와 무관하게 실패함.
 Next 개발 서버 캐시를 정리한 뒤 타입 검사 재실행 필요.
+
+---
+
+## Latest Codex Changes (codex/validation-panel lint cleanup)
+
+### 변경
+
+**`components/BuildingRenderer.ts`**
+- 사용하지 않는 `floorY` 파라미터 제거
+- 사용하지 않는 `gap` 변수 제거
+
+**`components/GuidelineReviewPanel.tsx`**
+- side-effect 삼항식을 명시적인 `if/else`로 변경
+- 카테고리 토글 로직도 명시적인 `if/else`로 변경
+
+### Schema Changed
+
+No.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
 
 ---
 

@@ -285,7 +285,7 @@ export class BuildingRenderer {
     }
   }
 
-  private getBalconyPosition(wall: string, width: number, depth: number, floorY: number) {
+  private getBalconyPosition(wall: string, width: number, depth: number) {
     const gap = 0.15;
     switch (wall) {
       case "front": return { x: 0, z: depth / 2 + gap };
@@ -300,7 +300,6 @@ export class BuildingRenderer {
     const railH = 1.0;
     const railMat = new THREE.MeshLambertMaterial({ color: "#a0a0a0" });
     const railThick = 0.05;
-    const gap = wall === "front" || wall === "back" ? depth / 2 + balD * 0.5 : width / 2 + balD * 0.5;
     const railLen = wall === "front" || wall === "back" ? balW : balW;
 
     const geo = new THREE.BoxGeometry(
@@ -309,7 +308,7 @@ export class BuildingRenderer {
       wall === "left" || wall === "right" ? railLen : railThick
     );
     const mesh = new THREE.Mesh(geo, railMat);
-    const pos = this.getBalconyPosition(wall, width, depth, floorY);
+    const pos = this.getBalconyPosition(wall, width, depth);
     const edgeOffset = wall === "front" ? balD / 2 : wall === "back" ? -balD / 2 : 0;
     const edgeOffsetZ = wall === "left" ? balD / 2 : wall === "right" ? -balD / 2 : 0;
     mesh.position.set(pos.x + (wall === "left" || wall === "right" ? 0 : edgeOffset), floorY + railH / 2 + 0.15, pos.z + (wall === "front" || wall === "back" ? edgeOffset * 0 : edgeOffsetZ));
