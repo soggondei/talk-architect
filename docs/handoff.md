@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex
+Claude Code (branch: claude/report-template)
 
 ---
 
@@ -309,15 +309,83 @@ No
 
 ---
 
-## Next Work For Claude Code
+## Latest Claude Code Changes (claude/report-template)
 
-### 1. 레이아웃 검증 리포트 템플릿
+### 추가/변경
 
-다음 항목을 포함한 리포트 텍스트 형식 설계 및 구현:
-- 전체 만족도 점수
-- 필수 인접 미충족 목록
-- 분리/금지 관계 위반 목록
-- 수정 우선순위 제안 (심각도 순)
+**`lib/reportGenerator.ts` — 신규**
+- `generateLayoutReport(rooms, connections, issues, satisfactionScore, projectName?)` 함수
+- 출력: `LayoutReport` 타입 — grade(A/B/C/D), executiveSummary, sections[], priorityActions[], plainText
+- 섹션 4종: "전체 배치 현황", "필수 인접 관계", "분리·금지 관계", "면적·수량 검증"
+- 수정 우선순위: 금지 위반(1순위) → 필수 인접 미충족(2순위) → 면적 오류(3순위)
+- `plainText`: 클립보드 복사용 전체 텍스트, 한국어 문장형 요약 포함
+
+**`components/ValidationReportPanel.tsx` — 신규**
+- 우측 drawer 형식 문서형 리포트 뷰어
+- 등급 배지(A~D), 만족도 % 바, 종합 평가 요약문 표시
+- 섹션별 펼침/접힘 (이슈 있는 섹션은 기본 펼침)
+- 수정 우선순위 번호 목록
+- "리포트 텍스트 복사" 버튼 (클립보드)
+
+**`app/page.tsx` — 업데이트**
+- `showReportPanel` 상태, `projectName` 상태 추가
+- `layoutReport` useMemo 계산 (rooms/connections/issues 변경 시 자동 갱신)
+- 하단 액션 바: "리포트 [A/B/C/D]" 버튼 (등급 뱃지 포함) + 매트릭스 토글을 같은 행에 배치
+- `ValidationReportPanel` 마운트
+
+**`components/GuidelineReviewPanel.tsx` — UX 문구 개선**
+- 헤더 부제목: "AI 추출 요건을 확인하고 확정하세요"
+- 신뢰도 바에 "신뢰도" 레이블 + title 속성 추가
+- 확정 버튼 title 개선: "확정 취소 — 다시 검토 상태로 되돌립니다"
+- 원문 인용 블록에 "지침서 원문" 레이블 추가
+- 빈 상태 개선: 하위 설명 텍스트 추가 (탭별로 안내 문구 구체화)
+- 하단 버튼에 "확정한 항목은 배치 검증 시 기준값으로 반영됩니다" 안내 추가
+
+**`lib/guidelineExtractionPrompt.ts` — 프롬프트 보강**
+- GuidelineItem: 복합 조건 분리 규칙 ("세미나실 3실 이상, 1실당 40m²" → 두 항목으로 분리)
+- Room: 표 형식 면적 추출, "1실당 X㎡" 패턴, floor 모호 표현 처리 규칙 추가
+- Relation: 인접 강도 판단 규칙 상세화 ("연접"→required, "동선 연계"→preferred 등)
+- 법규 추출: 건축법 조항 직접 인용 처리, 친환경/외관 조건의 unknown 분류
+- 제출물: 표 형식이면 통합 1항목, 개별 형식 조건만 분리
+
+### Schema Changed
+
+No. 신규 파일만 추가, 기존 타입 변경 없음.
+
+### Branch
+
+`claude/report-template` — PR 제출 예정
+
+---
+
+## Next Work For Codex
+
+### 1. `GuidelineItem` 확정값을 실제 데이터 흐름에 반영
+
+현재 `GuidelineReviewPanel`에서 확정은 UI 상태에만 반영됨.
+다음 단계:
+- 확정된 `GuidelineItem`의 면적/관계 값이 `rooms[]`, `connections[]`에 자동 반영되는 흐름 구현
+- 예: `room_area` 항목 확정 → 해당 room의 `totalArea` 업데이트 제안
+- 예: `adjacency` 항목 확정 → 해당 `Connection`의 `status: "user_confirmed"` 반영
+
+### 2. PDF 추출 저장/복원
+
+- 전체 플랜 JSON 내보내기에 `guidelineItems[]` + `confirmedGuidelineIds` 포함
+- JSON 불러오기 시 확정 상태도 복원
+
+### 3. `ValidationReportPanel`에서 리포트 PDF 내보내기
+
+- `plainText`를 사용해 PDF/Word 내보내기 기능 추가
+- 가능하면 섹션 구조 유지
+
+---
+
+## Next Work For Claude Code (이후 계획)
+
+### 배치 보고서 디테일 추가
+
+- `ValidationReportPanel`에 층별 뷰 지원 (현재는 단일 층 기준)
+- 리포트에서 특정 실 선택 시 캔버스에서 해당 실 하이라이트 연동
 
 ---
 

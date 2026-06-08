@@ -107,7 +107,8 @@ function ItemCard({
             >
               {pm.label}
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" title={`AI 추출 신뢰도 ${confPct}%`}>
+              <span className="text-[9px] text-gray-400">신뢰도</span>
               <div className="w-12 h-1.5 rounded-full bg-gray-200 overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all"
@@ -133,7 +134,7 @@ function ItemCard({
               ? "bg-green-500 text-white hover:bg-green-600"
               : "bg-gray-100 text-gray-400 hover:bg-green-100 hover:text-green-600"
           }`}
-          title={confirmed ? "확정 취소" : "확정"}
+          title={confirmed ? "확정 취소 — 다시 검토 상태로 되돌립니다" : "확정 — 검토 완료로 표시합니다"}
         >
           {confirmed ? "✓" : "○"}
         </button>
@@ -152,15 +153,20 @@ function ItemCard({
 
           {/* 원문 인용 */}
           {item.source.quote && (
-            <blockquote className="border-l-2 border-gray-300 pl-2 text-[11px] text-gray-500 italic leading-snug">
-              &ldquo;{item.source.quote}&rdquo;
-              {(item.source.section || item.source.page) && (
-                <span className="not-italic text-[10px] text-gray-400 ml-1">
-                  — {[item.source.section, item.source.page && `p.${item.source.page}`]
-                    .filter(Boolean).join(", ")}
-                </span>
-              )}
-            </blockquote>
+            <div>
+              <div className="text-[9px] font-bold text-gray-400 mb-1 tracking-wide uppercase">
+                지침서 원문
+              </div>
+              <blockquote className="border-l-2 border-gray-300 pl-2 text-[11px] text-gray-500 italic leading-snug">
+                &ldquo;{item.source.quote}&rdquo;
+                {(item.source.section || item.source.page) && (
+                  <span className="not-italic text-[10px] text-gray-400 ml-1">
+                    — {[item.source.section, item.source.page && `p.${item.source.page}`]
+                      .filter(Boolean).join(", ")}
+                  </span>
+                )}
+              </blockquote>
+            </div>
           )}
         </div>
       )}
@@ -228,11 +234,11 @@ export default function GuidelineReviewPanel({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-bold text-gray-900">지침서 요건 검토</div>
-              {projectName && (
-                <div className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[220px]">
-                  {projectName}
-                </div>
-              )}
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                {projectName
+                  ? <span className="truncate block max-w-[220px]">{projectName}</span>
+                  : "AI 추출 요건을 확인하고 확정하세요"}
+              </div>
             </div>
             <button
               onClick={onClose}
@@ -293,10 +299,17 @@ export default function GuidelineReviewPanel({
         {/* 아이템 목록 */}
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
           {grouped.length === 0 && (
-            <div className="text-center text-sm text-gray-400 pt-12">
-              {filter === "confirmed" ? "아직 확정된 항목이 없습니다" :
-               filter === "review"    ? "검토 필요 항목이 없습니다 ✓" :
-               "추출된 요건이 없습니다"}
+            <div className="text-center pt-12 space-y-1">
+              <div className="text-sm text-gray-400">
+                {filter === "confirmed" ? "확정된 항목이 없습니다"
+                  : filter === "review" ? "불확실한 항목이 없습니다 ✓"
+                  : "추출된 요건이 없습니다"}
+              </div>
+              <div className="text-[11px] text-gray-300">
+                {filter === "confirmed" ? "항목 오른쪽 ○ 버튼으로 검토 완료 처리하세요"
+                  : filter === "review" ? "모든 항목의 AI 신뢰도가 충분합니다"
+                  : "지침서 PDF를 업로드하면 요건이 자동으로 추출됩니다"}
+              </div>
             </div>
           )}
 
@@ -341,20 +354,18 @@ export default function GuidelineReviewPanel({
         </div>
 
         {/* 하단 액션 */}
-        <div className="flex-shrink-0 px-3 py-3 border-t border-gray-100 flex gap-2">
+        <div className="flex-shrink-0 px-3 pb-3 pt-2 border-t border-gray-100 space-y-2">
           <button
             onClick={confirmAll}
             disabled={filteredItems.every((i) => confirmedIds.has(i.id))}
-            className="flex-1 py-2 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+            className="w-full py-2 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+            title="표시된 항목을 모두 검토 완료로 표시합니다"
           >
-            {filter === "all" ? "전체 확정" : "현재 목록 확정"}
+            {filter === "all" ? "목록 전체 확정" : `${filter === "review" ? "검토 필요 항목" : "현재 목록"} 모두 확정`}
           </button>
-          <button
-            onClick={onClose}
-            className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          >
-            닫기
-          </button>
+          <p className="text-[10px] text-gray-400 text-center leading-snug">
+            확정한 항목은 배치 검증 시 기준값으로 반영됩니다
+          </p>
         </div>
       </div>
     </div>
