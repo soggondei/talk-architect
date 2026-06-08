@@ -124,13 +124,12 @@ components/BuildingRenderer.ts
 - `GuidelineItem` 검토/확정 UI 미구현
 - PDF 파싱 결과의 `relations[]`를 캔버스 `Connection[]`으로 직접 연결하는 흐름 미구현
 
-### API 연동 미완 (Codex 담당)
+### API 연동 상태
 
-- `/api/parse-pdf/route.ts`가 아직 구 `EXTRACT_PROMPT` 사용 중
-- 새 `GUIDELINE_EXTRACTION_PROMPT`로 교체 시 응답 파싱 로직도 변경 필요:
-  - 현재: `{ rooms[], floorComposition, projectName, totalArea }`
-  - 목표: `{ guidelineItems[], rooms[], relations[], documentName, totalArea }`
-- `FloorPlanCanvas.tsx`의 `handlePDFUpload`도 새 포맷에 맞게 업데이트 필요
+- `/api/parse-pdf/route.ts`는 `GUIDELINE_EXTRACTION_PROMPT` 사용 중
+- 응답 파싱 목표 포맷: `{ guidelineItems[], rooms[], relations[], documentName, totalArea }`
+- `FloorPlanCanvas.tsx`의 `handlePDFUpload`는 새 `relations[]` 포맷과 기존 `rooms[].adjacency` 포맷을 모두 지원
+- 남은 작업: 추출된 `guidelineItems[]`를 사용자가 검토/확정하는 UI 연결
 
 ---
 
@@ -138,19 +137,46 @@ components/BuildingRenderer.ts
 
 우선순위 순:
 
-### 1. /api/parse-pdf 라우트를 새 프롬프트로 교체
-
-`lib/guidelineExtractionPrompt.ts`의 `GUIDELINE_EXTRACTION_PROMPT`를 import하여
-기존 `EXTRACT_PROMPT`를 대체. 응답 파싱 로직을 3종 JSON에 맞게 업데이트.
-
-### 2. 전체 검증 패널 (drawer 또는 전용 뷰)
+### 1. 전체 검증 패널 (drawer 또는 전용 뷰)
 
 현재 사이드바에 상위 3개만 표시 중. 전체 ValidationIssue 목록을 볼 수 있는
 패널/드로어 추가. `lib/programValidation.ts`의 `validateSpaceProgram` 결과 활용.
 
+### 2. GuidelineItem 검토/확정 UI 구현
+
+PDF 파싱 후 추출된 `guidelineItems[]`를 보관하고, 사용자가 `ai_suggested` 항목을 확인해
+`user_confirmed`로 전환할 수 있는 패널 구현.
+
 ### 3. 남은 린트 경고 정리
 
 `components/BuildingRenderer.ts` 미사용 변수 제거.
+
+---
+
+## Latest Codex Changes (codex/parse-pdf-guideline)
+
+### 추가/변경
+
+**`app/api/parse-pdf/route.ts`**
+- 기존 긴 `EXTRACT_PROMPT` 제거
+- `GUIDELINE_EXTRACTION_PROMPT` import 적용
+- 코드블록/일반 JSON 응답 모두 파싱하는 `extractJsonObject()` 추가
+- 누락 필드를 기본값으로 정리하는 `normalizeExtractionOutput()` 추가
+- API 응답이 `guidelineItems`, `rooms`, `relations`, `documentName`, `totalArea`를 포함하도록 정규화
+
+**`components/FloorPlanCanvas.tsx`**
+- 현재 브랜치 기준 이미 새 `relations[]` 포맷과 기존 `rooms[].adjacency` fallback을 모두 지원
+- 이번 Codex 커밋에서는 라우트 응답을 해당 프론트 포맷에 맞춰 정규화
+
+### Schema Changed
+
+No. Existing Relation schema was used.
+
+### Verified
+
+- `npm run lint` passed with warnings only.
+- Browser reload on `http://localhost:3002/` passed with no console errors.
+- `npx tsc --noEmit` was blocked by duplicate generated `.next/types/* 2.ts` cache files, not source errors.
 
 ---
 
