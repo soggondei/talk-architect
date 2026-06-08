@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Claude Code
+Codex
 
 ---
 
@@ -36,7 +36,7 @@ data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업
 
 ---
 
-## 현재 파일 상태 (git 미커밋, 전체 작동 확인됨)
+## 현재 파일 상태 (main 기준, 로컬 main은 origin/main보다 5 commits ahead)
 
 ### 핵심 타입 및 유틸
 
@@ -55,7 +55,9 @@ data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업
 | `components/FloorPlanCanvas.tsx` | 메인 SVG 캔버스, 모든 인터랙션 (select/connect/pin/delete 모드) |
 | `components/SpaceChatPanel.tsx` | 좌측 채팅 사이드바, 검증 이슈 패널 |
 | `components/AdjacencyMatrix.tsx` | 인접 매트릭스 테이블 뷰 |
-| `components/BuildingRenderer.ts` | (미사용 변수 경고 있음) |
+| `components/GuidelineReviewPanel.tsx` | PDF 지침서 추출 요건 검토/확정 패널 |
+| `components/ValidationIssuesPanel.tsx` | 전체 검증 결과 drawer |
+| `components/BuildingRenderer.ts` | 3D 건물 렌더링 유틸 |
 
 ### hooks
 
@@ -134,15 +136,20 @@ No
 
 우선순위 순:
 
-### 1. GuidelineItem 검토/확정 UI 구현
+### 1. 타입 검사 캐시 정리
 
-PDF 파싱 후 추출된 `guidelineItems[]`를 보관하고, 사용자가 `ai_suggested` 항목을 확인해
-`user_confirmed`로 전환할 수 있는 패널 구현.
-
-### 2. 타입 검사 캐시 정리
-
-`.next/types/* 2.ts` 중복 생성 캐시가 있으면 `npx tsc --noEmit`가 소스와 무관하게 실패함.
+`.next/types/* 2.ts` 중복 생성 캐시 때문에 `npx tsc --noEmit`가 소스와 무관하게 실패함.
 Next 개발 서버 캐시를 정리한 뒤 타입 검사 재실행 필요.
+
+### 2. GuidelineItem 확정값을 실제 데이터 흐름에 반영
+
+현재 `GuidelineReviewPanel`은 사용자 검토/확정 UI까지 구현됨.
+다음 단계는 확정된 guideline item이 `rooms[]`, `relations[]`, validation/report/export 흐름에 어떻게 반영되는지 명확히 연결하는 것.
+
+### 3. PDF 추출 결과 저장/내보내기 보강
+
+현재 전체 플랜 JSON 내보내기에 지침서 추출 원문, 확정 상태, source quote가 충분히 포함되는지 확인하고,
+DWG/Revit/Rhino 전 기본 셋팅 데이터로 재사용 가능한 형태로 보강.
 
 ---
 
@@ -194,7 +201,7 @@ No.
 
 ### Verified
 
-- `npm run lint` passed with warnings only.
+- `npm run lint` passed with no warnings.
 - Browser check on `http://localhost:3002/` passed.
 - Sample input produced validation issues and `전체 보기` opened the full drawer.
 - No browser console errors.
@@ -298,7 +305,7 @@ No
 
 ### Branch
 
-`claude/guideline-review-panel` — PR 머지 후 main에 반영 요청
+`claude/guideline-review-panel` — main에 병합 완료
 
 ---
 
