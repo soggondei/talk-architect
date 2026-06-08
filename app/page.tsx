@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import SpaceChatPanel from "@/components/SpaceChatPanel";
 import FloorPlanCanvas from "@/components/FloorPlanCanvas";
 import AdjacencyMatrix from "@/components/AdjacencyMatrix";
+import ValidationIssuesPanel from "@/components/ValidationIssuesPanel";
 import { Room, Connection, SpaceProgram } from "@/lib/floorPlanTypes";
 import { autoLayout, calcSatisfactionScore } from "@/lib/floorPlanUtils";
 import { validateLayoutIssues, validateSpaceProgram, ValidationIssue } from "@/lib/programValidation";
@@ -13,6 +14,7 @@ export default function Home() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [programTotalArea, setProgramTotalArea] = useState<number | undefined>();
   const [showMatrix, setShowMatrix] = useState(false);
+  const [showValidationPanel, setShowValidationPanel] = useState(false);
 
   const handleProgramUpdate = useCallback((program: SpaceProgram) => {
     const laid = autoLayout(program.rooms, program.totalArea || 1);
@@ -44,6 +46,7 @@ export default function Home() {
           rooms={rooms}
           connections={connections}
           validationIssues={validationIssues}
+          onOpenValidationPanel={() => setShowValidationPanel(true)}
         />
       </div>
 
@@ -93,6 +96,15 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {showValidationPanel && (
+        <ValidationIssuesPanel
+          issues={validationIssues}
+          rooms={rooms}
+          connections={connections}
+          onClose={() => setShowValidationPanel(false)}
+        />
+      )}
     </main>
   );
 }

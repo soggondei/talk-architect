@@ -137,19 +137,53 @@ components/BuildingRenderer.ts
 
 우선순위 순:
 
-### 1. 전체 검증 패널 (drawer 또는 전용 뷰)
-
-현재 사이드바에 상위 3개만 표시 중. 전체 ValidationIssue 목록을 볼 수 있는
-패널/드로어 추가. `lib/programValidation.ts`의 `validateSpaceProgram` 결과 활용.
-
-### 2. GuidelineItem 검토/확정 UI 구현
+### 1. GuidelineItem 검토/확정 UI 구현
 
 PDF 파싱 후 추출된 `guidelineItems[]`를 보관하고, 사용자가 `ai_suggested` 항목을 확인해
 `user_confirmed`로 전환할 수 있는 패널 구현.
 
-### 3. 남은 린트 경고 정리
+### 2. 남은 린트 경고 정리
 
 `components/BuildingRenderer.ts` 미사용 변수 제거.
+
+### 3. 타입 검사 캐시 정리
+
+`.next/types/* 2.ts` 중복 생성 캐시가 있으면 `npx tsc --noEmit`가 소스와 무관하게 실패함.
+Next 개발 서버 캐시를 정리한 뒤 타입 검사 재실행 필요.
+
+---
+
+## Latest Codex Changes (codex/validation-panel)
+
+### 추가/변경
+
+**`components/ValidationIssuesPanel.tsx` — 신규**
+- 전체 `ValidationIssue` 목록을 볼 수 있는 우측 drawer
+- 오류/주의/정보 카운트 요약
+- 이슈 타입별 뱃지: 면적, 실 개수, 필수 인접, 금지 인접, 데이터
+- 관련 실과 관련 관계 이름 표시
+- 각 이슈별 수정 제안 표시
+
+**`app/page.tsx`**
+- `showValidationPanel` 상태 추가
+- `ValidationIssuesPanel` 연결
+- `SpaceChatPanel`에서 전체 검증 패널을 열 수 있도록 callback 전달
+
+**`components/SpaceChatPanel.tsx`**
+- 기존 검증 요약 카드의 우측 액션을 `전체 보기` 버튼으로 변경
+- 버튼 클릭 시 전체 검증 drawer 오픈
+
+### Schema Changed
+
+No.
+
+### Verified
+
+- `npm run lint` passed with warnings only.
+- Browser check on `http://localhost:3002/` passed.
+- Sample input produced validation issues and `전체 보기` opened the full drawer.
+- No browser console errors.
+- `npx tsc --noEmit` remains blocked by duplicate generated `.next/types/* 2.ts` cache files, not source errors.
 
 ---
 
