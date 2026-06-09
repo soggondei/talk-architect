@@ -7,11 +7,20 @@
 
 import { Room, Connection, ZONE_COLORS, ZoneType } from "./floorPlanTypes";
 import { ValidationIssue } from "./programValidation";
+import { GuidelineItem, GuidelineCategory } from "./guidelineExtractionPrompt";
 
 // ── 리포트 타입 ─────────────────────────────────────────────────────────────
 
 export type ReportGrade = "A" | "B" | "C" | "D";
 export type SectionSeverity = "ok" | "caution" | "critical";
+
+export interface SectionQuote {
+  itemTitle: string;
+  content: string;
+  quote: string;
+  sourceRef: string;     // "section p.N" 형태
+  confidence: number;
+}
 
 export interface ReportSection {
   id: string;
@@ -20,6 +29,7 @@ export interface ReportSection {
   summary: string;          // 한 문단 문장형 요약
   items: string[];          // 세부 항목 목록
   action?: string;          // 권장 조치
+  quotes?: SectionQuote[];  // 관련 지침서 원문 근거
 }
 
 export interface PriorityAction {
@@ -63,6 +73,37 @@ function gradeLabel(grade: ReportGrade): string {
 
 function severityEmoji(s: SectionSeverity): string {
   return { ok: "✓", caution: "△", critical: "✕" }[s];
+}
+
+// ── 지침서 근거 추출 ─────────────────────────────────────────────────────────
+
+const SECTION_CATEGORIES: Record<string, GuidelineCategory[]> = {
+  "adjacency":    ["adjacency"],
+  "separation":   ["separation"],
+  "area-check":   ["room_area", "room_count"],
+  "layout-overview": ["floor", "site"],
+};
+
+function extractQuotesForSection(
+  sectionId: string,
+  guidelineItems: GuidelineItem[],
+): SectionQuote[] {
+  const cats = SECTION_CATEGORIES[sectionId];
+  if (!cats) return [];
+
+  return guidelineItems
+    .filter((item) => cats.includes(item.category) && item.source.quote)
+    .slice(0, 4)
+    .map((item) => ({
+      itemTitle: item.title,
+      content: item.content,
+      quote: item.source.quote,
+      sourceRef: [
+        item.source.section,
+        item.source.page != null ? `p.${item.source.page}` : null,
+      ].filter(Boolean).join(", "),
+      confidence: item.source.confidence ?? 1,
+    }));
 }
 
 // ── 섹션 생성 ───────────────────────────────────────────────────────────────
@@ -338,6 +379,7 @@ export function generateLayoutReport(
   issues: ValidationIssue[],
   satisfactionScore: number,
   projectName?: string,
+  confirmedGuidelineItems?: GuidelineItem[],
 ): LayoutReport {
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const grade = gradeFromScore(satisfactionScore, errorCount);
@@ -363,12 +405,16 @@ export function generateLayoutReport(
       : "면적·수량 오류는 없습니다.",
   ].join(" ");
 
+  const glItems = confirmedGuidelineItems ?? [];
   const sections = [
     buildLayoutSection(rooms, connections, satisfactionScore, grade),
     buildAdjacencySection(issues, rooms, connections),
     buildSeparationSection(issues, rooms, connections),
     buildAreaSection(issues),
-  ];
+  ].map((section) => ({
+    ...section,
+    quotes: glItems.length ? extractQuotesForSection(section.id, glItems) : undefined,
+  }));
 
   const priorityActions = buildPriorityActions(sections, issues, rooms, connections);
 

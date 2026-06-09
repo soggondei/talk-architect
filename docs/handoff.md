@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex (branch: codex/guideline-data-flow)
+Claude Code (branch: claude/diff-report-export)
 
 ---
 
@@ -408,12 +408,73 @@ Yes. `Room` 구현 타입이 기존 `docs/data-schema.md`의 `status/source` 필
 
 ---
 
+## Latest Claude Code Changes (claude/diff-report-export)
+
+### 추가/변경
+
+**`lib/guidelineDiff.ts` — 신규**
+- `computeGuidelineDiffs(items, confirmedIds, rooms) → GuidelineDiff[]`
+- 확정된 GuidelineItem과 현재 room 값을 비교해 불일치 목록 반환
+- 감지 대상: room_area(면적 수치 비교), room_count(동일 이름 실 개수), floor(층 배정)
+- 내부 파서: `parseArea()`, `parseCount()`, `parseFloor()` — content 텍스트에서 수치 추출
+
+**`components/GuidelineDiffPanel.tsx` — 신규**
+- 확정 항목 ↔ 현재 실 값 불일치를 보여주는 알림 패널
+- "적용": 지침서 값으로 room 업데이트 (parsedValue/parsedFloor 기반)
+- "무시": 현재 값 유지, diff 닫기
+- "수정": 인라인 입력 (면적/개수=숫자입력, 층=드롭다운)
+- Props에 `onApply`, `onIgnore`, `onEdit` 콜백 정의 — Codex가 실제 room 변경 로직 연결 필요
+- 마운트 위치: FloorPlanCanvas 내 또는 app/page.tsx overlay (Codex가 배치 결정)
+
+**`lib/reportGenerator.ts` — 업데이트**
+- `SectionQuote` 타입 추가: `{ itemTitle, content, quote, sourceRef, confidence }`
+- `ReportSection`에 `quotes?: SectionQuote[]` 필드 추가
+- `generateLayoutReport`에 `confirmedGuidelineItems?: GuidelineItem[]` 파라미터 추가
+- `extractQuotesForSection()` — 섹션별 관련 카테고리의 guidelineItem quote를 최대 4건 추출
+  - adjacency 섹션 → adjacency 카테고리
+  - separation 섹션 → separation 카테고리
+  - area-check 섹션 → room_area, room_count 카테고리
+  - layout-overview 섹션 → floor, site 카테고리
+
+**`components/ValidationReportPanel.tsx` — 업데이트**
+- `generatePrintHtml(report)` — A4 인쇄용 HTML 생성 (한국어 폰트, 섹션 구조 유지)
+- `handleDownloadText()` — Blob으로 `.txt` 파일 다운로드
+- `handlePrint()` — 새 창에서 인쇄 대화상자 → "PDF로 저장" 가능
+- 하단 버튼 3종: "텍스트 복사", "TXT 저장", "인쇄 / PDF"
+- `QuoteBlock` 컴포넌트 — 섹션 펼침 시 관련 guidelineItem quote를 접힘형으로 표시
+- `SectionQuote` import from reportGenerator
+
+### Schema Changed
+
+No. 기존 필드 변경 없음. `ReportSection.quotes` 선택적 필드 추가만.
+
+### Branch
+
+`claude/diff-report-export` — PR 제출 예정
+
+### Codex 연결 필요 항목
+
+1. **GuidelineDiffPanel 마운트**:
+   `computeGuidelineDiffs(guidelineItems, confirmedGuidelineIds, rooms)` 호출 후
+   `GuidelineDiffPanel`에 결과 + room 변경 콜백 전달.
+   `onApply(diff)`: `diff.parsedValue`로 room.totalArea 업데이트, `diff.parsedFloor`로 room.floor 업데이트
+   `onIgnore(diff)`: diff를 ignoredDiffKeys Set에 추가해 패널에서 제거
+   `onEdit(diff, value)`: 파싱된 값으로 room 업데이트
+
+2. **confirmedGuidelineItems를 generateLayoutReport에 전달**:
+   현재 guidelineItems는 FloorPlanCanvas 내 로컬 상태.
+   `confirmedGuidelineItems`를 app/page.tsx로 올리거나,
+   FloorPlanCanvas에서 계산한 confirmed 목록을 app/page.tsx의 layoutReport useMemo에 전달.
+   전달 방법 예시: `onConfirmedItemsChange?: (items: GuidelineItem[]) => void` 콜백 추가.
+
+---
+
 ## Next Work For Claude Code (이후 계획)
 
 ### 배치 보고서 디테일 추가
 
-- `ValidationReportPanel`에 층별 뷰 지원 (현재는 단일 층 기준)
-- 리포트에서 특정 실 선택 시 캔버스에서 해당 실 하이라이트 연동
+- ValidationReportPanel에 층별 뷰 지원 (현재는 단일 층 기준 리포트)
+- 리포트에서 특정 실 선택 시 캔버스 해당 실 하이라이트 연동
 
 ---
 
