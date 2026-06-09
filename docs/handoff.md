@@ -452,20 +452,23 @@ No. 기존 필드 변경 없음. `ReportSection.quotes` 선택적 필드 추가�
 
 `claude/diff-report-export` — PR 제출 예정
 
-### Codex 연결 필요 항목
+### 추가 구현 (이번 작업에서 완료)
 
-1. **GuidelineDiffPanel 마운트**:
-   `computeGuidelineDiffs(guidelineItems, confirmedGuidelineIds, rooms)` 호출 후
-   `GuidelineDiffPanel`에 결과 + room 변경 콜백 전달.
-   `onApply(diff)`: `diff.parsedValue`로 room.totalArea 업데이트, `diff.parsedFloor`로 room.floor 업데이트
-   `onIgnore(diff)`: diff를 ignoredDiffKeys Set에 추가해 패널에서 제거
-   `onEdit(diff, value)`: 파싱된 값으로 room 업데이트
+**`components/FloorPlanCanvas.tsx`**
+- `onGuidelineStateChange?(items, confirmedIds)` prop 추가
+- `ignoredDiffKeys: Set<string>` 상태 (diff 무시 추적)
+- `activeDiffs` useMemo: `computeGuidelineDiffs` + ignoredDiffKeys 필터
+- `handleDiffApply` — room.totalArea/room.floor를 지침서 값으로 직접 업데이트
+- `handleDiffIgnore` — ignoredDiffKeys에 추가 (패널에서 제거)
+- `handleDiffEdit` — 사용자 입력값으로 room 업데이트
+- `GuidelineDiffPanel` 마운트 (activeDiffs > 0 일 때만)
+- PDF 업로드 후 `onGuidelineStateChange` 호출
+- `applyGuidelineConfirmations` 에서도 `onGuidelineStateChange` 호출
 
-2. **confirmedGuidelineItems를 generateLayoutReport에 전달**:
-   현재 guidelineItems는 FloorPlanCanvas 내 로컬 상태.
-   `confirmedGuidelineItems`를 app/page.tsx로 올리거나,
-   FloorPlanCanvas에서 계산한 confirmed 목록을 app/page.tsx의 layoutReport useMemo에 전달.
-   전달 방법 예시: `onConfirmedItemsChange?: (items: GuidelineItem[]) => void` 콜백 추가.
+**`app/page.tsx`**
+- `confirmedGuidelineItems: GuidelineItem[]` 상태
+- `handleGuidelineStateChange` — FloorPlanCanvas에서 confirmed 항목 받아 저장
+- `generateLayoutReport`에 `confirmedGuidelineItems` 전달 → QuoteBlock 활성화
 
 ---
 
