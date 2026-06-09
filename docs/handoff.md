@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex
+Claude Code (branch: claude/diff-report-export)
 
 ---
 
@@ -36,7 +36,7 @@ data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업
 
 ---
 
-## 현재 파일 상태 (main 기준, 로컬 main은 origin/main보다 5 commits ahead)
+## 현재 파일 상태 (codex/guideline-data-flow 기준)
 
 ### 핵심 타입 및 유틸
 
@@ -309,15 +309,175 @@ No
 
 ---
 
-## Next Work For Claude Code
+## Latest Claude Code Changes (claude/report-template)
 
-### 1. 레이아웃 검증 리포트 템플릿
+### 추가/변경
 
-다음 항목을 포함한 리포트 텍스트 형식 설계 및 구현:
-- 전체 만족도 점수
-- 필수 인접 미충족 목록
-- 분리/금지 관계 위반 목록
-- 수정 우선순위 제안 (심각도 순)
+**`lib/reportGenerator.ts` — 신규**
+- `generateLayoutReport(rooms, connections, issues, satisfactionScore, projectName?)` 함수
+- 출력: `LayoutReport` 타입 — grade(A/B/C/D), executiveSummary, sections[], priorityActions[], plainText
+- 섹션 4종: "전체 배치 현황", "필수 인접 관계", "분리·금지 관계", "면적·수량 검증"
+- 수정 우선순위: 금지 위반(1순위) → 필수 인접 미충족(2순위) → 면적 오류(3순위)
+- `plainText`: 클립보드 복사용 전체 텍스트, 한국어 문장형 요약 포함
+
+**`components/ValidationReportPanel.tsx` — 신규**
+- 우측 drawer 형식 문서형 리포트 뷰어
+- 등급 배지(A~D), 만족도 % 바, 종합 평가 요약문 표시
+- 섹션별 펼침/접힘 (이슈 있는 섹션은 기본 펼침)
+- 수정 우선순위 번호 목록
+- "리포트 텍스트 복사" 버튼 (클립보드)
+
+**`app/page.tsx` — 업데이트**
+- `showReportPanel` 상태, `projectName` 상태 추가
+- `layoutReport` useMemo 계산 (rooms/connections/issues 변경 시 자동 갱신)
+- 하단 액션 바: "리포트 [A/B/C/D]" 버튼 (등급 뱃지 포함) + 매트릭스 토글을 같은 행에 배치
+- `ValidationReportPanel` 마운트
+
+**`components/GuidelineReviewPanel.tsx` — UX 문구 개선**
+- 헤더 부제목: "AI 추출 요건을 확인하고 확정하세요"
+- 신뢰도 바에 "신뢰도" 레이블 + title 속성 추가
+- 확정 버튼 title 개선: "확정 취소 — 다시 검토 상태로 되돌립니다"
+- 원문 인용 블록에 "지침서 원문" 레이블 추가
+- 빈 상태 개선: 하위 설명 텍스트 추가 (탭별로 안내 문구 구체화)
+- 하단 버튼에 "확정한 항목은 배치 검증 시 기준값으로 반영됩니다" 안내 추가
+
+**`lib/guidelineExtractionPrompt.ts` — 프롬프트 보강**
+- GuidelineItem: 복합 조건 분리 규칙 ("세미나실 3실 이상, 1실당 40m²" → 두 항목으로 분리)
+- Room: 표 형식 면적 추출, "1실당 X㎡" 패턴, floor 모호 표현 처리 규칙 추가
+- Relation: 인접 강도 판단 규칙 상세화 ("연접"→required, "동선 연계"→preferred 등)
+- 법규 추출: 건축법 조항 직접 인용 처리, 친환경/외관 조건의 unknown 분류
+- 제출물: 표 형식이면 통합 1항목, 개별 형식 조건만 분리
+
+### Schema Changed
+
+No. 신규 파일만 추가, 기존 타입 변경 없음.
+
+### Branch
+
+`claude/report-template` — PR 제출 예정
+
+---
+
+## Next Work For Codex
+
+### 1. `ValidationReportPanel`에서 리포트 PDF 내보내기
+
+- `plainText`를 사용해 PDF/Word 내보내기 기능 추가
+- 가능하면 섹션 구조 유지
+
+### 2. 확정 GuidelineItem의 면적값 반영 UI
+
+- 현재 확정된 `GuidelineItem`은 관련 `rooms[]`, `connections[]`의 `status`에 반영됨
+- 다음 단계: `room_area`, `room_count`, `floor` 항목 확정 시 기존 room 값과 다를 경우 “적용/무시” 선택 UI 추가
+- AI 값이 사용자 확정값을 자동 덮어쓰지 않도록 diff preview 필요
+
+---
+
+## Latest Codex Changes (codex/guideline-data-flow)
+
+### 추가/변경
+
+**`lib/floorPlanTypes.ts`**
+- `Room`에 `source?: SourceReference[]`, `status?: ItemStatus` 추가
+- `docs/data-schema.md`의 Room 스키마와 구현 타입을 맞춤
+
+**`components/FloorPlanCanvas.tsx`**
+- GuidelineItem 확정/확정 취소 시 `guidelineItems[].status`를 함께 업데이트
+- 확정된 GuidelineItem의 `appliesToRoomIds` 대상 room은 `status: "user_confirmed"`로 반영
+- 확정된 GuidelineItem의 `appliesToRelationIds` 대상 connection은 `status: "user_confirmed"`로 반영
+- PDF에서 추출된 room의 `source`, `status`를 보존
+- 전체 플랜 JSON 내보내기에 `guidelineItems[]`, `confirmedGuidelineIds`, `pdfSummary` 포함
+- JSON 불러오기(`📥 JSON`) 추가: rooms/connections, pinnedIds, multiFloor, GuidelineItem 확정 상태, PDF 요약 복원
+
+**`components/GuidelineReviewPanel.tsx`**
+- “목록 전체 확정”이 여러 항목을 한 번에 안정적으로 확정하도록 `onConfirmMany` 콜백 추가
+
+**`components/BuildingRenderer.ts`, `lib/reportGenerator.ts`**
+- 타입 검사/린트에서 발견된 소스 오류와 경고 정리
+
+### Schema Changed
+
+Yes. `Room` 구현 타입이 기존 `docs/data-schema.md`의 `status/source` 필드와 일치하도록 확장됨.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
+- `npx tsc --noEmit` passed after moving duplicate generated `.next/types/cache-life.d 2.ts` cache file to `/private/tmp/talk-architect-next-types-backup/`.
+- Browser check on `http://localhost:3002/` passed.
+- Sample input generated rooms, validation/report UI stayed visible, and both `💾 JSON` / `📥 JSON` controls appeared.
+
+---
+
+## Latest Claude Code Changes (claude/diff-report-export)
+
+### 추가/변경
+
+**`lib/guidelineDiff.ts` — 신규**
+- `computeGuidelineDiffs(items, confirmedIds, rooms) → GuidelineDiff[]`
+- 확정된 GuidelineItem과 현재 room 값을 비교해 불일치 목록 반환
+- 감지 대상: room_area(면적 수치 비교), room_count(동일 이름 실 개수), floor(층 배정)
+- 내부 파서: `parseArea()`, `parseCount()`, `parseFloor()` — content 텍스트에서 수치 추출
+
+**`components/GuidelineDiffPanel.tsx` — 신규**
+- 확정 항목 ↔ 현재 실 값 불일치를 보여주는 알림 패널
+- "적용": 지침서 값으로 room 업데이트 (parsedValue/parsedFloor 기반)
+- "무시": 현재 값 유지, diff 닫기
+- "수정": 인라인 입력 (면적/개수=숫자입력, 층=드롭다운)
+- Props에 `onApply`, `onIgnore`, `onEdit` 콜백 정의 — Codex가 실제 room 변경 로직 연결 필요
+- 마운트 위치: FloorPlanCanvas 내 또는 app/page.tsx overlay (Codex가 배치 결정)
+
+**`lib/reportGenerator.ts` — 업데이트**
+- `SectionQuote` 타입 추가: `{ itemTitle, content, quote, sourceRef, confidence }`
+- `ReportSection`에 `quotes?: SectionQuote[]` 필드 추가
+- `generateLayoutReport`에 `confirmedGuidelineItems?: GuidelineItem[]` 파라미터 추가
+- `extractQuotesForSection()` — 섹션별 관련 카테고리의 guidelineItem quote를 최대 4건 추출
+  - adjacency 섹션 → adjacency 카테고리
+  - separation 섹션 → separation 카테고리
+  - area-check 섹션 → room_area, room_count 카테고리
+  - layout-overview 섹션 → floor, site 카테고리
+
+**`components/ValidationReportPanel.tsx` — 업데이트**
+- `generatePrintHtml(report)` — A4 인쇄용 HTML 생성 (한국어 폰트, 섹션 구조 유지)
+- `handleDownloadText()` — Blob으로 `.txt` 파일 다운로드
+- `handlePrint()` — 새 창에서 인쇄 대화상자 → "PDF로 저장" 가능
+- 하단 버튼 3종: "텍스트 복사", "TXT 저장", "인쇄 / PDF"
+- `QuoteBlock` 컴포넌트 — 섹션 펼침 시 관련 guidelineItem quote를 접힘형으로 표시
+- `SectionQuote` import from reportGenerator
+
+### Schema Changed
+
+No. 기존 필드 변경 없음. `ReportSection.quotes` 선택적 필드 추가만.
+
+### Branch
+
+`claude/diff-report-export` — PR 제출 예정
+
+### 추가 구현 (이번 작업에서 완료)
+
+**`components/FloorPlanCanvas.tsx`**
+- `onGuidelineStateChange?(items, confirmedIds)` prop 추가
+- `ignoredDiffKeys: Set<string>` 상태 (diff 무시 추적)
+- `activeDiffs` useMemo: `computeGuidelineDiffs` + ignoredDiffKeys 필터
+- `handleDiffApply` — room.totalArea/room.floor를 지침서 값으로 직접 업데이트
+- `handleDiffIgnore` — ignoredDiffKeys에 추가 (패널에서 제거)
+- `handleDiffEdit` — 사용자 입력값으로 room 업데이트
+- `GuidelineDiffPanel` 마운트 (activeDiffs > 0 일 때만)
+- PDF 업로드 후 `onGuidelineStateChange` 호출
+- `applyGuidelineConfirmations` 에서도 `onGuidelineStateChange` 호출
+
+**`app/page.tsx`**
+- `confirmedGuidelineItems: GuidelineItem[]` 상태
+- `handleGuidelineStateChange` — FloorPlanCanvas에서 confirmed 항목 받아 저장
+- `generateLayoutReport`에 `confirmedGuidelineItems` 전달 → QuoteBlock 활성화
+
+---
+
+## Next Work For Claude Code (이후 계획)
+
+### 배치 보고서 디테일 추가
+
+- ValidationReportPanel에 층별 뷰 지원 (현재는 단일 층 기준 리포트)
+- 리포트에서 특정 실 선택 시 캔버스 해당 실 하이라이트 연동
 
 ---
 

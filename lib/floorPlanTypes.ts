@@ -43,6 +43,8 @@ export interface Room {
   width: number;     // px (면적 비례)
   height: number;    // px
   notes?: string;
+  source?: SourceReference[];
+  status?: ItemStatus;
 }
 
 export interface Connection {

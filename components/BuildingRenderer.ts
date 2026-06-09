@@ -189,7 +189,7 @@ export class BuildingRenderer {
 
       // 발코니
       balconies.filter((b) => b.floor === f + 1).forEach((bal) => {
-        const balPos = this.getBalconyPosition(bal.wall, width, depth, floorY);
+        const balPos = this.getBalconyPosition(bal.wall, width, depth);
         const geo = new THREE.BoxGeometry(
           bal.wall === "front" || bal.wall === "back" ? bal.width : bal.depth,
           0.15,

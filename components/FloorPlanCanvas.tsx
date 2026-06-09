@@ -15,12 +15,15 @@ import { parseRoomCSV, parsedRoomsToLayout, parseMatrixCSV } from "@/lib/csvPars
 import { useForceSimulation } from "@/hooks/useForceSimulation";
 import { GuidelineItem } from "@/lib/guidelineExtractionPrompt";
 import GuidelineReviewPanel from "@/components/GuidelineReviewPanel";
+import { computeGuidelineDiffs, GuidelineDiff } from "@/lib/guidelineDiff";
+import GuidelineDiffPanel from "@/components/GuidelineDiffPanel";
 
 interface Props {
   rooms: Room[];
   connections: Connection[];
   onRoomsChange: (rooms: Room[]) => void;
   onConnectionsChange: (connections: Connection[]) => void;
+  onGuidelineStateChange?: (items: GuidelineItem[], confirmedIds: Set<string>) => void;
 }
 
 type Mode = "select" | "connect" | "pin" | "delete";
@@ -30,6 +33,11 @@ type PdfGuidelineItem = {
   category: string;
   title: string;
   content: string;
+  appliesToRoomIds?: string[];
+  appliesToRelationIds?: string[];
+  priority?: string;
+  source?: GuidelineItem["source"];
+  status?: GuidelineItem["status"];
 };
 
 type PdfRoom = {
@@ -43,6 +51,8 @@ type PdfRoom = {
   notes?: string | null;
   adjacency?: string[];
   required?: string[];
+  source?: Room["source"];
+  status?: Room["status"];
 };
 
 type PdfRelation = {
@@ -70,6 +80,21 @@ type PdfParseResult = {
   rooms: PdfRoom[];
 };
 
+type SavedFloorPlanData = {
+  rooms?: Room[];
+  connections?: Connection[];
+  totalArea?: number;
+  satisfactionScore?: number;
+  multiFloor?: boolean;
+  pinnedIds?: string[];
+  guidelineItems?: GuidelineItem[];
+  confirmedGuidelineIds?: string[];
+  pdfSummary?: {
+    projectName?: string;
+    floorComposition?: PdfParseResult["floorComposition"];
+  } | null;
+};
+
 function buildFloorCompositionFromGuidelines(items: PdfGuidelineItem[] = []): PdfParseResult["floorComposition"] {
   const floorItems = items.filter((item) => item.category === "floor");
   if (!floorItems.length) return null;
@@ -90,8 +115,21 @@ function isStoredRelationType(type: PdfRelation["type"]): type is Connection["ty
   return type === "required" || type === "preferred" || type === "separated" || type === "forbidden";
 }
 
+function idsFromGuidelines(
+  items: GuidelineItem[],
+  confirmedIds: Set<string>,
+  field: "appliesToRoomIds" | "appliesToRelationIds"
+) {
+  const ids = new Set<string>();
+  items.forEach((item) => {
+    if (!confirmedIds.has(item.id)) return;
+    item[field]?.forEach((id) => ids.add(id));
+  });
+  return ids;
+}
+
 export default function FloorPlanCanvas({
-  rooms, connections, onRoomsChange, onConnectionsChange,
+  rooms, connections, onRoomsChange, onConnectionsChange, onGuidelineStateChange,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [mode, setMode] = useState<Mode>("select");
@@ -116,8 +154,116 @@ export default function FloorPlanCanvas({
   const [guidelineItems, setGuidelineItems] = useState<GuidelineItem[]>([]);
   const [confirmedGuidelineIds, setConfirmedGuidelineIds] = useState<Set<string>>(new Set());
   const [showGuidelinePanel, setShowGuidelinePanel] = useState(false);
+  const [ignoredDiffKeys, setIgnoredDiffKeys] = useState<Set<string>>(new Set());
 
   const sim = useForceSimulation(onRoomsChange);
+
+  const applyGuidelineConfirmations = useCallback(
+    (nextConfirmedIds: Set<string>, nextItems: GuidelineItem[] = guidelineItems) => {
+      const confirmedRoomIds = idsFromGuidelines(nextItems, nextConfirmedIds, "appliesToRoomIds");
+      const confirmedRelationIds = idsFromGuidelines(nextItems, nextConfirmedIds, "appliesToRelationIds");
+
+      const updatedItems = nextItems.map((item) => ({
+        ...item,
+        status: nextConfirmedIds.has(item.id) ? ("user_confirmed" as const) : ("ai_suggested" as const),
+      }));
+      setGuidelineItems(updatedItems);
+      setConfirmedGuidelineIds(nextConfirmedIds);
+      onGuidelineStateChange?.(updatedItems, nextConfirmedIds);
+
+      if (confirmedRoomIds.size > 0 || rooms.some((room) => room.status === "user_confirmed" && room.source?.length)) {
+        onRoomsChange(
+          rooms.map((room) => {
+            if (confirmedRoomIds.has(room.id)) return { ...room, status: "user_confirmed" };
+            if (room.status === "user_confirmed" && room.source?.length) return { ...room, status: "ai_suggested" };
+            return room;
+          })
+        );
+      }
+
+      if (confirmedRelationIds.size > 0 || connections.some((connection) => connection.status === "user_confirmed" && connection.source?.length)) {
+        onConnectionsChange(
+          connections.map((connection) => {
+            if (confirmedRelationIds.has(connection.id)) return { ...connection, status: "user_confirmed" };
+            if (connection.status === "user_confirmed" && connection.source?.length) return { ...connection, status: "ai_suggested" };
+            return connection;
+          })
+        );
+      }
+    },
+    [connections, guidelineItems, onConnectionsChange, onGuidelineStateChange, onRoomsChange, rooms]
+  );
+
+  const confirmGuideline = useCallback(
+    (id: string) => {
+      const next = new Set(confirmedGuidelineIds);
+      next.add(id);
+      applyGuidelineConfirmations(next);
+    },
+    [applyGuidelineConfirmations, confirmedGuidelineIds]
+  );
+
+  const unconfirmGuideline = useCallback(
+    (id: string) => {
+      const next = new Set(confirmedGuidelineIds);
+      next.delete(id);
+      applyGuidelineConfirmations(next);
+    },
+    [applyGuidelineConfirmations, confirmedGuidelineIds]
+  );
+
+  const confirmGuidelines = useCallback(
+    (ids: string[]) => {
+      const next = new Set(confirmedGuidelineIds);
+      ids.forEach((id) => next.add(id));
+      applyGuidelineConfirmations(next);
+    },
+    [applyGuidelineConfirmations, confirmedGuidelineIds]
+  );
+
+  // GuidelineDiff — 확정 항목 ↔ room 값 불일치 계산
+  const activeDiffs = useMemo(() => {
+    if (!guidelineItems.length || !confirmedGuidelineIds.size) return [];
+    const all = computeGuidelineDiffs(guidelineItems, confirmedGuidelineIds, rooms);
+    return all.filter((d) => !ignoredDiffKeys.has(`${d.itemId}-${d.roomId}`));
+  }, [guidelineItems, confirmedGuidelineIds, rooms, ignoredDiffKeys]);
+
+  const handleDiffIgnore = useCallback((diff: GuidelineDiff) => {
+    setIgnoredDiffKeys((prev) => new Set([...prev, `${diff.itemId}-${diff.roomId}`]));
+  }, []);
+
+  const handleDiffApply = useCallback((diff: GuidelineDiff) => {
+    onRoomsChange(
+      rooms.map((r) => {
+        if (r.id !== diff.roomId) return r;
+        if (diff.category === "room_area" && diff.parsedValue != null) {
+          return { ...r, totalArea: diff.parsedValue, area: diff.parsedValue };
+        }
+        if (diff.category === "floor" && diff.parsedFloor != null) {
+          return { ...r, floor: diff.parsedFloor };
+        }
+        return r;
+      })
+    );
+    setIgnoredDiffKeys((prev) => new Set([...prev, `${diff.itemId}-${diff.roomId}`]));
+  }, [rooms, onRoomsChange]);
+
+  const handleDiffEdit = useCallback((diff: GuidelineDiff, value: string) => {
+    onRoomsChange(
+      rooms.map((r) => {
+        if (r.id !== diff.roomId) return r;
+        if (diff.category === "room_area" || diff.category === "room_count") {
+          const num = parseFloat(value);
+          if (!isNaN(num) && num > 0) return { ...r, totalArea: num, area: num };
+        }
+        if (diff.category === "floor") {
+          return { ...r, floor: value as FloorType };
+        }
+        return r;
+      })
+    );
+    setIgnoredDiffKeys((prev) => new Set([...prev, `${diff.itemId}-${diff.roomId}`]));
+  }, [rooms, onRoomsChange]);
 
   // Satisfaction metrics
   const { score: satisfactionScore, satisfiedIds } = calcSatisfactionScore(rooms, connections);
@@ -357,6 +503,8 @@ export default function FloorPlanCanvas({
           floor: r.floor ?? undefined,
           x: 0, y: 0,
           notes: r.notes ?? undefined,
+          source: r.source,
+          status: r.status ?? "ai_suggested",
           ...computeSize(safeTotalArea(r), sumArea),
         }));
 
@@ -377,9 +525,12 @@ export default function FloorPlanCanvas({
 
         // Store GuidelineItems (새 프롬프트 포맷) and open review panel
         if (data.guidelineItems?.length) {
-          setGuidelineItems(data.guidelineItems as GuidelineItem[]);
+          const newItems = data.guidelineItems as GuidelineItem[];
+          setGuidelineItems(newItems);
           setConfirmedGuidelineIds(new Set());
+          setIgnoredDiffKeys(new Set());
           setShowGuidelinePanel(true);
+          onGuidelineStateChange?.(newItems, new Set());
         }
 
         const seen = new Set<string>();
@@ -446,12 +597,19 @@ export default function FloorPlanCanvas({
 
   // Export JSON
   const handleExportJSON = useCallback(() => {
+    const savedGuidelineItems = guidelineItems.map((item) => ({
+      ...item,
+      status: confirmedGuidelineIds.has(item.id) ? "user_confirmed" as const : item.status,
+    }));
     const data = {
       rooms: rooms.map((r) => ({ ...r })),
       connections: connections.map((c) => ({ ...c })),
       totalArea, satisfactionScore,
       multiFloor,
       pinnedIds: [...pinnedIds],
+      guidelineItems: savedGuidelineItems,
+      confirmedGuidelineIds: [...confirmedGuidelineIds],
+      pdfSummary,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -463,7 +621,48 @@ export default function FloorPlanCanvas({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [rooms, connections, totalArea, satisfactionScore, multiFloor, pinnedIds]);
+  }, [rooms, connections, totalArea, satisfactionScore, multiFloor, pinnedIds, guidelineItems, confirmedGuidelineIds, pdfSummary]);
+
+  const handleImportJSON = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.target?.result ?? "{}")) as SavedFloorPlanData;
+          if (!Array.isArray(data.rooms) || !Array.isArray(data.connections)) {
+            throw new Error("저장된 공간/관계 데이터를 찾을 수 없습니다");
+          }
+
+          onRoomsChange(data.rooms);
+          onConnectionsChange(data.connections);
+          setPinnedIds(new Set(data.pinnedIds ?? []));
+          setMultiFloor(!!data.multiFloor);
+
+          const importedGuidelineItems = Array.isArray(data.guidelineItems) ? data.guidelineItems : [];
+          const restoredConfirmedIds = new Set(
+            data.confirmedGuidelineIds
+              ?? importedGuidelineItems.filter((item) => item.status === "user_confirmed").map((item) => item.id)
+          );
+          setGuidelineItems(importedGuidelineItems);
+          setConfirmedGuidelineIds(restoredConfirmedIds);
+          setShowGuidelinePanel(importedGuidelineItems.length > 0);
+
+          setPDFSummary(data.pdfSummary ?? null);
+          setShowSummary(!!data.pdfSummary?.floorComposition);
+          setPDFError(null);
+          sim.stop();
+        } catch (err) {
+          setPDFError(err instanceof Error ? err.message : "JSON 불러오기 실패");
+        }
+      };
+      reader.readAsText(file);
+    },
+    [onConnectionsChange, onRoomsChange, sim]
+  );
 
   // CSV handlers
   const handleCSVRooms = useCallback(
@@ -700,6 +899,10 @@ export default function FloorPlanCanvas({
                 💾 JSON
               </button>
             )}
+            <label className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors">
+              📥 JSON
+              <input type="file" accept=".json,application/json" className="hidden" onChange={handleImportJSON} />
+            </label>
             <label className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors">
               📂 실 CSV
               <input type="file" accept=".csv" className="hidden" onChange={handleCSVRooms} />
@@ -1142,10 +1345,21 @@ export default function FloorPlanCanvas({
           <GuidelineReviewPanel
             items={guidelineItems}
             confirmedIds={confirmedGuidelineIds}
-            onConfirm={(id) => setConfirmedGuidelineIds((prev) => new Set([...prev, id]))}
-            onUnconfirm={(id) => setConfirmedGuidelineIds((prev) => { const next = new Set(prev); next.delete(id); return next; })}
+            onConfirm={confirmGuideline}
+            onConfirmMany={confirmGuidelines}
+            onUnconfirm={unconfirmGuideline}
             onClose={() => setShowGuidelinePanel(false)}
             projectName={pdfSummary?.projectName}
+          />
+        )}
+
+        {/* 확정 항목 ↔ 실 값 불일치 알림 */}
+        {activeDiffs.length > 0 && (
+          <GuidelineDiffPanel
+            diffs={activeDiffs}
+            onApply={handleDiffApply}
+            onIgnore={handleDiffIgnore}
+            onEdit={handleDiffEdit}
           />
         )}
 
