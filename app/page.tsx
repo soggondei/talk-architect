@@ -10,6 +10,7 @@ import { Room, Connection, SpaceProgram } from "@/lib/floorPlanTypes";
 import { autoLayout, calcSatisfactionScore } from "@/lib/floorPlanUtils";
 import { validateLayoutIssues, validateSpaceProgram, ValidationIssue } from "@/lib/programValidation";
 import { generateLayoutReport, LayoutReport } from "@/lib/reportGenerator";
+import { GuidelineItem } from "@/lib/guidelineExtractionPrompt";
 
 export default function Home() {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -19,6 +20,11 @@ export default function Home() {
   const [showValidationPanel, setShowValidationPanel] = useState(false);
   const [showReportPanel, setShowReportPanel] = useState(false);
   const [projectName, setProjectName] = useState<string | undefined>();
+  const [confirmedGuidelineItems, setConfirmedGuidelineItems] = useState<GuidelineItem[]>([]);
+
+  const handleGuidelineStateChange = useCallback((items: GuidelineItem[], confirmedIds: Set<string>) => {
+    setConfirmedGuidelineItems(items.filter((i) => confirmedIds.has(i.id)));
+  }, []);
 
   const handleProgramUpdate = useCallback((program: SpaceProgram, name?: string) => {
     const laid = autoLayout(program.rooms, program.totalArea || 1);
@@ -44,8 +50,8 @@ export default function Home() {
   const layoutReport = useMemo<LayoutReport | null>(() => {
     if (rooms.length === 0) return null;
     const { score } = calcSatisfactionScore(rooms, connections);
-    return generateLayoutReport(rooms, connections, validationIssues, score, projectName);
-  }, [rooms, connections, validationIssues, projectName]);
+    return generateLayoutReport(rooms, connections, validationIssues, score, projectName, confirmedGuidelineItems);
+  }, [rooms, connections, validationIssues, projectName, confirmedGuidelineItems]);
 
   return (
     <main className="flex h-screen w-screen overflow-hidden">
@@ -69,6 +75,7 @@ export default function Home() {
             connections={connections}
             onRoomsChange={setRooms}
             onConnectionsChange={setConnections}
+            onGuidelineStateChange={handleGuidelineStateChange}
           />
         </div>
 
