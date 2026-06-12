@@ -6,6 +6,8 @@ import {
   type ExtractionOutput,
 } from "@/lib/guidelineExtractionPrompt";
 
+export const maxDuration = 300; // 복잡한 지침서 PDF 처리 최대 5분
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function extractJsonObject(text: string): string | null {
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
       text: GUIDELINE_EXTRACTION_PROMPT,
     };
 
-    const response = await client.messages.create({
+    const message = await client.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 32000,
       messages: [
@@ -64,9 +66,9 @@ export async function POST(req: NextRequest) {
           content: [docBlock, textBlock],
         },
       ],
-    });
+    }).finalMessage();
 
-    const text = response.content
+    const text = message.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
