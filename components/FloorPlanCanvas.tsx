@@ -1272,7 +1272,11 @@ export default function FloorPlanCanvas({
                 )}
 
                 {/* Room rect */}
-                <rect x={room.x} y={room.y} width={room.width} height={room.height}
+                <rect
+                  x={Number.isFinite(room.x) ? room.x : 0}
+                  y={Number.isFinite(room.y) ? room.y : 0}
+                  width={Number.isFinite(room.width) && room.width > 0 ? room.width : 64}
+                  height={Number.isFinite(room.height) && room.height > 0 ? room.height : 44}
                   rx={4} fill={zc.bg}
                   stroke={isPinned ? "#F97316" : isSatisfied ? "#16A34A" : zc.border}
                   strokeWidth={isPinned || isSatisfied ? 2 : 1.5} />

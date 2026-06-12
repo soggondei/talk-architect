@@ -19,9 +19,11 @@ export function computeSize(
   area: number,
   totalArea: number
 ): { width: number; height: number } {
+  const safeTotal = Number.isFinite(totalArea) && totalArea > 0 ? totalArea : 1;
+  const safeArea = Number.isFinite(area) && area > 0 ? area : safeTotal * 0.05;
   const canvasFill = CANVAS_W * CANVAS_H * 0.45;
-  const scale = canvasFill / Math.max(totalArea, 1);
-  const px = area * scale;
+  const scale = canvasFill / safeTotal;
+  const px = safeArea * scale;
   const w = Math.max(MIN_W, Math.sqrt(px * ASPECT));
   const h = Math.max(MIN_H, Math.sqrt(px / ASPECT));
   return { width: Math.round(w), height: Math.round(h) };
@@ -191,7 +193,9 @@ export function layoutByFloor(rooms: Room[], _totalArea: number): Room[] {
     const quad = FLOOR_QUADS[floor];
     const availW = quad.w - PAD * 2;
     const availH = quad.h - PAD * 2;
-    const floorTotal = fRooms.reduce((s, r) => s + r.totalArea, 0);
+    const safeRoomArea = (r: Room) =>
+      Number.isFinite(r.totalArea) && r.totalArea > 0 ? r.totalArea : 10;
+    const floorTotal = fRooms.reduce((s, r) => s + safeRoomArea(r), 0);
 
     // Try layout with given scale; returns placed rooms or null if any room overflows quad height
     const tryLayout = (sc: number): Room[] | null => {
@@ -199,7 +203,7 @@ export function layoutByFloor(rooms: Room[], _totalArea: number): Room[] {
       let x = 0, y = 0, rowH = 0;
 
       for (const r of fRooms) {
-        const px = r.totalArea * sc;
+        const px = safeRoomArea(r) * sc;
         const w = Math.max(MIN_W, Math.round(Math.min(availW * 0.9, Math.sqrt(px * ASPECT))));
         const h = Math.max(MIN_H, Math.round(Math.min(availH * 0.85, Math.sqrt(px / ASPECT))));
 
@@ -233,7 +237,7 @@ export function layoutByFloor(rooms: Room[], _totalArea: number): Room[] {
     if (!laid) {
       let x = 0, y = 0, rowH = 0;
       laid = fRooms.map((r) => {
-        const px = r.totalArea * scale;
+        const px = safeRoomArea(r) * scale;
         const w = Math.max(MIN_W, Math.round(Math.min(availW * 0.5, Math.sqrt(px * ASPECT))));
         const h = Math.max(MIN_H, Math.round(Math.min(availH * 0.5, Math.sqrt(px / ASPECT))));
         if (x > 0 && x + w > availW) { x = 0; y += rowH + GAP; rowH = 0; }
