@@ -592,7 +592,7 @@ export default function FloorPlanCanvas({
         setPDFLoading(false);
       }
     },
-    [onRoomsChange, onConnectionsChange]
+    [onRoomsChange, onConnectionsChange, onGuidelineStateChange]
   );
 
   // Export JSON
@@ -643,13 +643,15 @@ export default function FloorPlanCanvas({
           setMultiFloor(!!data.multiFloor);
 
           const importedGuidelineItems = Array.isArray(data.guidelineItems) ? data.guidelineItems : [];
-          const restoredConfirmedIds = new Set(
+          const restoredConfirmedIds = new Set<string>(
             data.confirmedGuidelineIds
               ?? importedGuidelineItems.filter((item) => item.status === "user_confirmed").map((item) => item.id)
           );
           setGuidelineItems(importedGuidelineItems);
           setConfirmedGuidelineIds(restoredConfirmedIds);
+          onGuidelineStateChange?.(importedGuidelineItems, restoredConfirmedIds);
           setShowGuidelinePanel(importedGuidelineItems.length > 0);
+          setIgnoredDiffKeys(new Set());
 
           setPDFSummary(data.pdfSummary ?? null);
           setShowSummary(!!data.pdfSummary?.floorComposition);
@@ -661,7 +663,7 @@ export default function FloorPlanCanvas({
       };
       reader.readAsText(file);
     },
-    [onConnectionsChange, onRoomsChange, sim]
+    [onConnectionsChange, onGuidelineStateChange, onRoomsChange, sim]
   );
 
   // CSV handlers
