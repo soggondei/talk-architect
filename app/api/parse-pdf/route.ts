@@ -6,6 +6,8 @@ import {
   type ExtractionOutput,
 } from "@/lib/guidelineExtractionPrompt";
 
+export const maxDuration = 300; // 복잡한 지침서 PDF 처리 최대 5분
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function extractJsonObject(text: string): string | null {
@@ -55,18 +57,18 @@ export async function POST(req: NextRequest) {
       text: GUIDELINE_EXTRACTION_PROMPT,
     };
 
-    const response = await client.messages.create({
+    const message = await client.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 8096,
+      max_tokens: 32000,
       messages: [
         {
           role: "user",
           content: [docBlock, textBlock],
         },
       ],
-    });
+    }).finalMessage();
 
-    const text = response.content
+    const text = message.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
@@ -74,12 +76,22 @@ export async function POST(req: NextRequest) {
     const jsonText = extractJsonObject(text);
     if (!jsonText) {
       return NextResponse.json(
-        { error: "공간 정보를 추출할 수 없습니다", raw: text },
+        { error: "공간 정보를 추출할 수 없습니다. 지침서 형식을 확인하거나 다시 시도해주세요.", raw: text },
         { status: 422 }
       );
     }
 
-    const parsed = normalizeExtractionOutput(JSON.parse(jsonText), file.name);
+    let parsedJson: Partial<ExtractionOutput>;
+    try {
+      parsedJson = JSON.parse(jsonText);
+    } catch {
+      return NextResponse.json(
+        { error: "AI 응답 파싱에 실패했습니다. 지침서가 너무 복잡하면 페이지 수를 줄여서 다시 시도해주세요." },
+        { status: 422 }
+      );
+    }
+
+    const parsed = normalizeExtractionOutput(parsedJson, file.name);
     return NextResponse.json(parsed);
   } catch (err) {
     console.error("parse-pdf error:", err);

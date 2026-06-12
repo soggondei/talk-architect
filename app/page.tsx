@@ -5,9 +5,12 @@ import SpaceChatPanel from "@/components/SpaceChatPanel";
 import FloorPlanCanvas from "@/components/FloorPlanCanvas";
 import AdjacencyMatrix from "@/components/AdjacencyMatrix";
 import ValidationIssuesPanel from "@/components/ValidationIssuesPanel";
+import ValidationReportPanel from "@/components/ValidationReportPanel";
 import { Room, Connection, SpaceProgram } from "@/lib/floorPlanTypes";
 import { autoLayout, calcSatisfactionScore } from "@/lib/floorPlanUtils";
 import { validateLayoutIssues, validateSpaceProgram, ValidationIssue } from "@/lib/programValidation";
+import { generateLayoutReport, LayoutReport } from "@/lib/reportGenerator";
+import { GuidelineItem } from "@/lib/guidelineExtractionPrompt";
 
 export default function Home() {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -15,13 +18,21 @@ export default function Home() {
   const [programTotalArea, setProgramTotalArea] = useState<number | undefined>();
   const [showMatrix, setShowMatrix] = useState(false);
   const [showValidationPanel, setShowValidationPanel] = useState(false);
+  const [showReportPanel, setShowReportPanel] = useState(false);
+  const [projectName, setProjectName] = useState<string | undefined>();
+  const [confirmedGuidelineItems, setConfirmedGuidelineItems] = useState<GuidelineItem[]>([]);
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
 
-  const handleProgramUpdate = useCallback((program: SpaceProgram) => {
+  const handleGuidelineStateChange = useCallback((items: GuidelineItem[], confirmedIds: Set<string>) => {
+    setConfirmedGuidelineItems(items.filter((i) => confirmedIds.has(i.id)));
+  }, []);
+
+  const handleProgramUpdate = useCallback((program: SpaceProgram, name?: string) => {
     const laid = autoLayout(program.rooms, program.totalArea || 1);
     setRooms(laid);
     setConnections(program.connections || []);
     setProgramTotalArea(program.totalArea);
-    // 공간이 들어오면 매트릭스 자동으로 열기
+    if (name) setProjectName(name);
     setShowMatrix(true);
   }, []);
 
@@ -37,6 +48,12 @@ export default function Home() {
     return [...programValidation.issues, ...layoutIssues];
   }, [rooms, connections, programTotalArea]);
 
+  const layoutReport = useMemo<LayoutReport | null>(() => {
+    if (rooms.length === 0) return null;
+    const { score } = calcSatisfactionScore(rooms, connections);
+    return generateLayoutReport(rooms, connections, validationIssues, score, projectName, confirmedGuidelineItems);
+  }, [rooms, connections, validationIssues, projectName, confirmedGuidelineItems]);
+
   return (
     <main className="flex h-screen w-screen overflow-hidden">
       {/* 왼쪽: 채팅 패널 */}
@@ -47,6 +64,7 @@ export default function Home() {
           connections={connections}
           validationIssues={validationIssues}
           onOpenValidationPanel={() => setShowValidationPanel(true)}
+          onOpenReportPanel={layoutReport ? () => setShowReportPanel(true) : undefined}
         />
       </div>
 
@@ -59,13 +77,41 @@ export default function Home() {
             connections={connections}
             onRoomsChange={setRooms}
             onConnectionsChange={setConnections}
+            onGuidelineStateChange={handleGuidelineStateChange}
+            highlightRoomId={focusedRoomId}
+            onHighlightClear={() => setFocusedRoomId(null)}
           />
         </div>
+
+        {/* 하단 액션 바 */}
+        <div className="flex-shrink-0 flex items-stretch border-t border-gray-200">
+          {/* 리포트 버튼 */}
+          {layoutReport && (
+            <button
+              onClick={() => setShowReportPanel(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 border-r border-gray-200 transition-colors"
+            >
+              <span>리포트</span>
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                style={{
+                  background: layoutReport.grade === "A" ? "#F0FDF4"
+                    : layoutReport.grade === "B" ? "#EFF6FF"
+                    : layoutReport.grade === "C" ? "#FFFBEB" : "#FEF2F2",
+                  color: layoutReport.grade === "A" ? "#16A34A"
+                    : layoutReport.grade === "B" ? "#2563EB"
+                    : layoutReport.grade === "C" ? "#D97706" : "#DC2626",
+                }}
+              >
+                {layoutReport.grade}
+              </span>
+            </button>
+          )}
 
         {/* 매트릭스 토글 버튼 */}
         <button
           onClick={() => setShowMatrix((v) => !v)}
-          className={`flex-shrink-0 flex items-center justify-center gap-2 py-1.5 text-xs font-medium transition-colors border-t border-gray-200 ${
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium transition-colors ${
             showMatrix
               ? "bg-gray-800 text-white hover:bg-gray-700"
               : "bg-white text-gray-500 hover:bg-gray-50"
@@ -84,6 +130,7 @@ export default function Home() {
             </span>
           )}
         </button>
+        </div>
 
         {/* 매트릭스 패널 */}
         {showMatrix && (
@@ -103,6 +150,17 @@ export default function Home() {
           rooms={rooms}
           connections={connections}
           onClose={() => setShowValidationPanel(false)}
+        />
+      )}
+
+      {showReportPanel && layoutReport && (
+        <ValidationReportPanel
+          report={layoutReport}
+          onClose={() => setShowReportPanel(false)}
+          onRoomFocus={(roomId) => {
+            setFocusedRoomId(roomId);
+            setShowReportPanel(false);
+          }}
         />
       )}
     </main>

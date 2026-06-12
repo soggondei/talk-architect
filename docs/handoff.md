@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex
+Claude Code (branch: claude/report-canvas-focus, claude/dxf-export)
 
 ---
 
@@ -10,8 +10,11 @@ Codex
 
 | 역할 | 담당 |
 |---|---|
-| 추출 프롬프트, UX 흐름 설계, 리포트 문구, AI 관련 기능 제안 | **Claude Code** |
-| 스키마 구현, 검증 로직, UI 상태 일관성, 테스트, 안정적 구현 | **Codex** |
+| **기획 리드** — 기능 로드맵 결정, UX 흐름 설계, AI 프롬프트, 리포트 문구 | **Claude Code** |
+| **구현** — 스키마 구현, 검증 로직, UI 상태 일관성, 테스트, 안정적 구현 | **Codex** |
+
+> Claude Code가 메인을 잡고 Codex에게 구체적인 구현 태스크를 지시한다.
+> Codex는 `## Next Work For Codex` 섹션만 읽고 정확히 그 범위 안에서 구현한다.
 
 작업 전 반드시 이 파일을 읽고, 작업 후 반드시 이 파일을 업데이트할 것.
 data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업데이트.
@@ -36,7 +39,7 @@ data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업
 
 ---
 
-## 현재 파일 상태 (main 기준, 로컬 main은 origin/main보다 5 commits ahead)
+## 현재 파일 상태 (codex/guideline-data-flow 기준)
 
 ### 핵심 타입 및 유틸
 
@@ -136,20 +139,102 @@ No
 
 우선순위 순:
 
-### 1. 타입 검사 캐시 정리
+### 1. FloorPlanCanvas — `highlightRoomId` 하이라이트 렌더링
 
-`.next/types/* 2.ts` 중복 생성 캐시 때문에 `npx tsc --noEmit`가 소스와 무관하게 실패함.
-Next 개발 서버 캐시를 정리한 뒤 타입 검사 재실행 필요.
+**목적**: 리포트 패널에서 "수정 우선순위" 항목을 클릭하면 해당 room이 캔버스에서 강조 표시됨.
 
-### 2. GuidelineItem 확정값을 실제 데이터 흐름에 반영
+**인터페이스 (Claude Code가 이미 추가):**
+```ts
+// components/FloorPlanCanvas.tsx Props에 이미 추가됨
+highlightRoomId?: string | null;
+onHighlightClear?: () => void;
+```
 
-현재 `GuidelineReviewPanel`은 사용자 검토/확정 UI까지 구현됨.
-다음 단계는 확정된 guideline item이 `rooms[]`, `relations[]`, validation/report/export 흐름에 어떻게 반영되는지 명확히 연결하는 것.
+**구현 요구사항:**
+- `highlightRoomId`가 있는 room의 SVG `<rect>`에 두꺼운 outline 추가
+  - `stroke="#6366F1"` (인디고), `strokeWidth={3}`, `strokeDasharray="6 3"`
+  - 기존 zone stroke보다 위 레이어에 렌더링 (SVG에서 같은 rect에 두 번째 rect 오버레이 또는 `filter` 사용)
+- 자동 스크롤/뷰포트 이동은 불필요 (SVG 뷰포트 고정)
+- `useEffect`로 3초 후 `onHighlightClear?.()` 자동 호출해 포커스 해제
+- 의존성: `highlightRoomId`, `onHighlightClear`
 
-### 3. PDF 추출 결과 저장/내보내기 보강
+**테스트 방법:**
+1. 공간 프로그램 입력 → 필수 인접 조건 설정 → 인접 미충족 상태 만들기
+2. "리포트 [C/D]" 버튼 클릭 → 수정 우선순위 항목 클릭
+3. 패널이 닫히고 해당 room이 캔버스에서 인디고 outline으로 강조됨
+4. 3초 후 outline 자동 사라짐
 
-현재 전체 플랜 JSON 내보내기에 지침서 추출 원문, 확정 상태, source quote가 충분히 포함되는지 확인하고,
-DWG/Revit/Rhino 전 기본 셋팅 데이터로 재사용 가능한 형태로 보강.
+---
+
+### 2. GuidelineDiffPanel — "수정" 입력 room_count 연결
+
+**목적**: 현재 `handleDiffEdit`에서 room_count 타입 diff를 편집할 때 room instance 증감이 일어나지 않음.
+
+**현재 상태:**
+- `handleDiffApply`는 room_count diff를 room instance 증감으로 처리함 (codex/room-count-report-entry에서 구현)
+- `handleDiffEdit`는 사용자 직접 입력값으로 처리하는데, `room_count` case가 누락됨
+
+**구현 요구사항:**
+`FloorPlanCanvas.tsx`의 `handleDiffEdit` 내부에서 `diff.category === "room_count"` 처리 추가:
+```
+parsedCount = parseInt(userInputStr)
+handleDiffApply({ ...diff, parsedValue: parsedCount })
+```
+즉, 수정 입력도 apply 로직을 재사용하면 됨. 새 로직 불필요.
+
+---
+
+### 3. DXF 내보내기 — 층별 레이어 분리 (multiFloor 모드)
+
+**목적**: 층별뷰(`multiFloor=true`)일 때 DXF 파일에서 각 층을 별도 레이어로 구분해 AutoCAD/Rhino에서 층 단위 on/off 가능하게 함.
+
+**현재 상태 (`lib/dxfExporter.ts`):**
+- 단일 레이어 구조: 존(zone) 기준 레이어만 있음 (공용, 전용, 서비스, 동선, 코어)
+- `Room.floor` 필드 존재: `'B1' | '1F' | '2F' | '3F'`
+
+**구현 요구사항:**
+
+`lib/dxfExporter.ts`에서 `generateDXF` 시그니처 변경:
+```ts
+export function generateDXF(rooms: Room[], multiFloor?: boolean): string
+```
+
+`multiFloor=true`이면 레이어 이름을 `{floor}_{zone}` 복합 방식으로 변경:
+- 예: `B1_서비스`, `1F_공용`, `2F_전용`, `3F_코어`
+- 레이어 테이블에 사용된 `floor+zone` 조합만 등록
+- 기존 `ZONE_ACI` 색상 유지, 레이어 이름만 변경
+
+`downloadDXF` 시그니처도 변경:
+```ts
+export function downloadDXF(rooms: Room[], projectName?: string, multiFloor?: boolean): void
+```
+
+`FloorPlanCanvas.tsx`의 DXF 버튼 클릭 핸들러:
+```tsx
+onClick={() => downloadDXF(rooms, pdfSummary?.projectName, multiFloor)}
+```
+(`multiFloor`는 이미 컴포넌트 내 상태로 존재)
+
+**스케일 바 엔티티 추가 (보너스, 선택):**
+DXF 엔티티 섹션 끝에 LINE + TEXT로 스케일 바 추가:
+- 위치: x=0, y=-2m (캔버스 아래쪽)
+- 길이: 10m 또는 5m (총 폭에 맞게 선택)
+- TEXT: "0    10m" 또는 "0  5m"
+
+**테스트 방법:**
+1. PDF 업로드 후 층별뷰 전환 → `📐 DXF` 클릭
+2. 생성된 .dxf 파일을 AutoCAD/Rhino/ArchiCAD 또는 [LibreCAD](https://librecad.org/) 에서 열기
+3. 레이어 패널에서 `B1_서비스`, `1F_공용` 등 복합 레이어가 보이는지 확인
+4. 한국어 레이어 이름이 깨지지 않는지 확인
+
+---
+
+### Verified (Codex 완료 후 업데이트)
+
+- `npm run lint` 통과 확인
+- `npx tsc --noEmit` 통과 확인
+- 브라우저에서 하이라이트 동작 확인
+- DXF 파일 레이어 이름 한국어 인코딩 확인
 
 ---
 
@@ -309,15 +394,277 @@ No
 
 ---
 
-## Next Work For Claude Code
+## Latest Claude Code Changes (claude/report-template)
 
-### 1. 레이아웃 검증 리포트 템플릿
+### 추가/변경
 
-다음 항목을 포함한 리포트 텍스트 형식 설계 및 구현:
-- 전체 만족도 점수
-- 필수 인접 미충족 목록
-- 분리/금지 관계 위반 목록
-- 수정 우선순위 제안 (심각도 순)
+**`lib/reportGenerator.ts` — 신규**
+- `generateLayoutReport(rooms, connections, issues, satisfactionScore, projectName?)` 함수
+- 출력: `LayoutReport` 타입 — grade(A/B/C/D), executiveSummary, sections[], priorityActions[], plainText
+- 섹션 4종: "전체 배치 현황", "필수 인접 관계", "분리·금지 관계", "면적·수량 검증"
+- 수정 우선순위: 금지 위반(1순위) → 필수 인접 미충족(2순위) → 면적 오류(3순위)
+- `plainText`: 클립보드 복사용 전체 텍스트, 한국어 문장형 요약 포함
+
+**`components/ValidationReportPanel.tsx` — 신규**
+- 우측 drawer 형식 문서형 리포트 뷰어
+- 등급 배지(A~D), 만족도 % 바, 종합 평가 요약문 표시
+- 섹션별 펼침/접힘 (이슈 있는 섹션은 기본 펼침)
+- 수정 우선순위 번호 목록
+- "리포트 텍스트 복사" 버튼 (클립보드)
+
+**`app/page.tsx` — 업데이트**
+- `showReportPanel` 상태, `projectName` 상태 추가
+- `layoutReport` useMemo 계산 (rooms/connections/issues 변경 시 자동 갱신)
+- 하단 액션 바: "리포트 [A/B/C/D]" 버튼 (등급 뱃지 포함) + 매트릭스 토글을 같은 행에 배치
+- `ValidationReportPanel` 마운트
+
+**`components/GuidelineReviewPanel.tsx` — UX 문구 개선**
+- 헤더 부제목: "AI 추출 요건을 확인하고 확정하세요"
+- 신뢰도 바에 "신뢰도" 레이블 + title 속성 추가
+- 확정 버튼 title 개선: "확정 취소 — 다시 검토 상태로 되돌립니다"
+- 원문 인용 블록에 "지침서 원문" 레이블 추가
+- 빈 상태 개선: 하위 설명 텍스트 추가 (탭별로 안내 문구 구체화)
+- 하단 버튼에 "확정한 항목은 배치 검증 시 기준값으로 반영됩니다" 안내 추가
+
+**`lib/guidelineExtractionPrompt.ts` — 프롬프트 보강**
+- GuidelineItem: 복합 조건 분리 규칙 ("세미나실 3실 이상, 1실당 40m²" → 두 항목으로 분리)
+- Room: 표 형식 면적 추출, "1실당 X㎡" 패턴, floor 모호 표현 처리 규칙 추가
+- Relation: 인접 강도 판단 규칙 상세화 ("연접"→required, "동선 연계"→preferred 등)
+- 법규 추출: 건축법 조항 직접 인용 처리, 친환경/외관 조건의 unknown 분류
+- 제출물: 표 형식이면 통합 1항목, 개별 형식 조건만 분리
+
+### Schema Changed
+
+No. 신규 파일만 추가, 기존 타입 변경 없음.
+
+### Branch
+
+`claude/report-template` — PR 제출 예정
+
+---
+
+## Next Work For Codex
+
+### 1. `room_count` 수정 입력 로직 보강
+
+- 이번 Codex 작업에서 `room_count`의 "적용" 로직은 구현됨.
+- 남은 작업: `GuidelineDiffPanel`의 "수정" 입력에서 개수 값을 넣었을 때도 동일한 room instance 증감 로직을 쓰도록 연결.
+
+### 2. 리포트 진입점 UX 추가 검증
+
+- SpaceChatPanel 검증 카드에 "리포트 보기" 버튼 연결 완료.
+- 브라우저에서 장시간 AI 응답 대기 시 자동화가 timeout될 수 있어, 실제 사용자 조작으로 한 번 더 확인 권장.
+
+---
+
+## Latest Claude Code Changes (claude/report-canvas-focus + dxf-export)
+
+### 추가/변경
+
+**`lib/reportGenerator.ts`**
+- `PriorityAction`에 `relatedRoomIds?: string[]` 필드 추가
+- `buildPriorityActions`에서 모든 이슈의 `relatedRoomIds`를 PriorityAction에 그대로 전달
+
+**`components/ValidationReportPanel.tsx`**
+- Props에 `onRoomFocus?: (roomId: string) => void` 추가
+- 수정 우선순위 행: `relatedRoomIds[0]`가 있고 `onRoomFocus`가 있으면 클릭 가능
+- 클릭 시 `onRoomFocus(roomId)` 호출 후 `onClose()` — 리포트 닫고 캔버스로 이동
+- hover 상태에서 "캔버스 ›" 힌트 표시 (group/group-hover Tailwind 패턴)
+
+**`app/page.tsx`**
+- `focusedRoomId: string | null` 상태 추가
+- `ValidationReportPanel`에 `onRoomFocus` 연결 → `setFocusedRoomId` + `setShowReportPanel(false)`
+- `FloorPlanCanvas`에 `highlightRoomId={focusedRoomId}`, `onHighlightClear={() => setFocusedRoomId(null)}` 전달
+
+**`components/FloorPlanCanvas.tsx`**
+- Props 인터페이스에 `highlightRoomId?: string | null`, `onHighlightClear?: () => void` 추가
+- `useEffect`: `highlightRoomId` 변경 시 3초 후 `onHighlightClear?.()` 자동 호출 (포커스 자동 해제)
+- SVG 하이라이트 렌더링은 **Codex가 구현** (`## Next Work For Codex` 참고)
+- DXF 내보내기 버튼 추가: `📐 DXF` (emerald 색상), `rooms.length > 0`일 때 노출
+- `import { downloadDXF } from "@/lib/dxfExporter"` 추가
+
+**`lib/dxfExporter.ts` — 신규**
+- `generateDXF(rooms: Room[]): string` — DXF R2000(AC1015) 텍스트 생성
+- 픽셀→미터 스케일: `scale = sqrt(총실면적_m² / (CANVAS_W × CANVAS_H × 0.45))`
+- Y축 반전: `y_dxf = canvasH_m − room.y × scale` (캔버스 Y↓, DXF Y↑)
+- 존별 LAYER 테이블: 공용(5)/전용(2)/서비스(3)/동선(6)/코어(8) — AutoCAD Index Color
+- 실당 엔티티: LWPOLYLINE(닫힘 4꼭짓점) + TEXT(실명) + TEXT(면적㎡)
+- INSUNITS=6(미터), UTF-8 인코딩, CONTINUOUS 선종류
+- `downloadDXF(rooms, projectName?)`: 브라우저 파일 다운로드 트리거
+
+**`app/api/parse-pdf/route.ts`** (PDF 파싱 오류 수정)
+- `export const maxDuration = 300` 추가 (Next.js 라우트 세그먼트 5분 타임아웃)
+- `messages.create()` → `messages.stream().finalMessage()` (max_tokens>10min 스트리밍 필수)
+- `max_tokens: 8096` → `32000` (복잡한 지침서 처리)
+- JSON.parse 별도 try-catch + 한국어 에러 메시지
+
+**`lib/floorPlanUtils.ts`** (NaN 버그 수정)
+- `computeSize`: `Number.isFinite()` 가드로 NaN 방어
+- `layoutByFloor`: `safeRoomArea` 헬퍼로 totalArea NaN 전파 차단
+
+**`components/FloorPlanCanvas.tsx`** (NaN 버그 수정)
+- SVG `<rect>` x/y/width/height에 `Number.isFinite()` fallback 추가
+
+### Verified
+
+- `npm run lint` 통과 (경고 없음)
+- `npx tsc --noEmit` 통과
+
+### Schema Changed
+
+No.
+
+### Branch
+
+`claude/report-canvas-focus`
+
+---
+
+## Latest Codex Changes (codex/room-count-report-entry)
+
+### 사전 검증 및 병합
+
+- `claude/diff-report-export` 브랜치(PR #1)를 검증하고 `main`에 fast-forward 병합.
+- JSON import 시 `onGuidelineStateChange(importedGuidelineItems, restoredConfirmedIds)`가 호출되지 않던 문제 수정 후 병합.
+- `handlePDFUpload`의 `useCallback` dependency에 `onGuidelineStateChange` 추가해 lint 경고 제거.
+
+### 추가/변경
+
+**`components/FloorPlanCanvas.tsx`**
+- `handleDiffApply`에서 `room_count` diff 적용 로직 구현.
+- `parsedValue > 현재 동일 이름 실 수`: 같은 name/zone/floor/source/status 기반 room instance 추가.
+- `parsedValue < 현재 동일 이름 실 수`: 마지막 instance부터 제거.
+- room_count 적용 후 `autoLayout` 또는 `layoutByFloor` 재실행.
+- 제거된 room을 참조하는 connection과 pinned id 정리.
+
+**`components/SpaceChatPanel.tsx`**
+- `onOpenReportPanel?: () => void` prop 추가.
+- 검증 요약 카드 우측에 "리포트 보기" 버튼 추가.
+- 기존 "전체 보기" 버튼은 유지.
+
+**`app/page.tsx`**
+- `layoutReport`가 있을 때 `SpaceChatPanel`에 `onOpenReportPanel={() => setShowReportPanel(true)}` 연결.
+
+### Schema Changed
+
+No.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
+- `npx tsc --noEmit` passed.
+- Test PDF was generated at `/private/tmp/talk-architect-test/guideline.pdf`.
+- `POST /api/parse-pdf` with the test PDF returned guidelineItems/rooms/relations successfully.
+- `GET http://127.0.0.1:3002/` returned HTTP 200.
+- Browser file upload automation could not complete because Codex In-app Browser reports file uploads are not supported; actual manual PDF upload should be checked once in the UI.
+
+---
+
+## Latest Codex Changes (codex/guideline-data-flow)
+
+### 추가/변경
+
+**`lib/floorPlanTypes.ts`**
+- `Room`에 `source?: SourceReference[]`, `status?: ItemStatus` 추가
+- `docs/data-schema.md`의 Room 스키마와 구현 타입을 맞춤
+
+**`components/FloorPlanCanvas.tsx`**
+- GuidelineItem 확정/확정 취소 시 `guidelineItems[].status`를 함께 업데이트
+- 확정된 GuidelineItem의 `appliesToRoomIds` 대상 room은 `status: "user_confirmed"`로 반영
+- 확정된 GuidelineItem의 `appliesToRelationIds` 대상 connection은 `status: "user_confirmed"`로 반영
+- PDF에서 추출된 room의 `source`, `status`를 보존
+- 전체 플랜 JSON 내보내기에 `guidelineItems[]`, `confirmedGuidelineIds`, `pdfSummary` 포함
+- JSON 불러오기(`📥 JSON`) 추가: rooms/connections, pinnedIds, multiFloor, GuidelineItem 확정 상태, PDF 요약 복원
+
+**`components/GuidelineReviewPanel.tsx`**
+- “목록 전체 확정”이 여러 항목을 한 번에 안정적으로 확정하도록 `onConfirmMany` 콜백 추가
+
+**`components/BuildingRenderer.ts`, `lib/reportGenerator.ts`**
+- 타입 검사/린트에서 발견된 소스 오류와 경고 정리
+
+### Schema Changed
+
+Yes. `Room` 구현 타입이 기존 `docs/data-schema.md`의 `status/source` 필드와 일치하도록 확장됨.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
+- `npx tsc --noEmit` passed after moving duplicate generated `.next/types/cache-life.d 2.ts` cache file to `/private/tmp/talk-architect-next-types-backup/`.
+- Browser check on `http://localhost:3002/` passed.
+- Sample input generated rooms, validation/report UI stayed visible, and both `💾 JSON` / `📥 JSON` controls appeared.
+
+---
+
+## Latest Claude Code Changes (claude/diff-report-export)
+
+### 추가/변경
+
+**`lib/guidelineDiff.ts` — 신규**
+- `computeGuidelineDiffs(items, confirmedIds, rooms) → GuidelineDiff[]`
+- 확정된 GuidelineItem과 현재 room 값을 비교해 불일치 목록 반환
+- 감지 대상: room_area(면적 수치 비교), room_count(동일 이름 실 개수), floor(층 배정)
+- 내부 파서: `parseArea()`, `parseCount()`, `parseFloor()` — content 텍스트에서 수치 추출
+
+**`components/GuidelineDiffPanel.tsx` — 신규**
+- 확정 항목 ↔ 현재 실 값 불일치를 보여주는 알림 패널
+- "적용": 지침서 값으로 room 업데이트 (parsedValue/parsedFloor 기반)
+- "무시": 현재 값 유지, diff 닫기
+- "수정": 인라인 입력 (면적/개수=숫자입력, 층=드롭다운)
+- Props에 `onApply`, `onIgnore`, `onEdit` 콜백 정의 — Codex가 실제 room 변경 로직 연결 필요
+- 마운트 위치: FloorPlanCanvas 내 또는 app/page.tsx overlay (Codex가 배치 결정)
+
+**`lib/reportGenerator.ts` — 업데이트**
+- `SectionQuote` 타입 추가: `{ itemTitle, content, quote, sourceRef, confidence }`
+- `ReportSection`에 `quotes?: SectionQuote[]` 필드 추가
+- `generateLayoutReport`에 `confirmedGuidelineItems?: GuidelineItem[]` 파라미터 추가
+- `extractQuotesForSection()` — 섹션별 관련 카테고리의 guidelineItem quote를 최대 4건 추출
+  - adjacency 섹션 → adjacency 카테고리
+  - separation 섹션 → separation 카테고리
+  - area-check 섹션 → room_area, room_count 카테고리
+  - layout-overview 섹션 → floor, site 카테고리
+
+**`components/ValidationReportPanel.tsx` — 업데이트**
+- `generatePrintHtml(report)` — A4 인쇄용 HTML 생성 (한국어 폰트, 섹션 구조 유지)
+- `handleDownloadText()` — Blob으로 `.txt` 파일 다운로드
+- `handlePrint()` — 새 창에서 인쇄 대화상자 → "PDF로 저장" 가능
+- 하단 버튼 3종: "텍스트 복사", "TXT 저장", "인쇄 / PDF"
+- `QuoteBlock` 컴포넌트 — 섹션 펼침 시 관련 guidelineItem quote를 접힘형으로 표시
+- `SectionQuote` import from reportGenerator
+
+### Schema Changed
+
+No. 기존 필드 변경 없음. `ReportSection.quotes` 선택적 필드 추가만.
+
+### Branch
+
+`claude/diff-report-export` — PR 제출 예정
+
+### 추가 구현 (이번 작업에서 완료)
+
+**`components/FloorPlanCanvas.tsx`**
+- `onGuidelineStateChange?(items, confirmedIds)` prop 추가
+- `ignoredDiffKeys: Set<string>` 상태 (diff 무시 추적)
+- `activeDiffs` useMemo: `computeGuidelineDiffs` + ignoredDiffKeys 필터
+- `handleDiffApply` — room.totalArea/room.floor를 지침서 값으로 직접 업데이트
+- `handleDiffIgnore` — ignoredDiffKeys에 추가 (패널에서 제거)
+- `handleDiffEdit` — 사용자 입력값으로 room 업데이트
+- `GuidelineDiffPanel` 마운트 (activeDiffs > 0 일 때만)
+- PDF 업로드 후 `onGuidelineStateChange` 호출
+- `applyGuidelineConfirmations` 에서도 `onGuidelineStateChange` 호출
+
+**`app/page.tsx`**
+- `confirmedGuidelineItems: GuidelineItem[]` 상태
+- `handleGuidelineStateChange` — FloorPlanCanvas에서 confirmed 항목 받아 저장
+- `generateLayoutReport`에 `confirmedGuidelineItems` 전달 → QuoteBlock 활성화
+
+---
+
+## Next Work For Claude Code (이후 계획)
+
+### 배치 보고서 디테일 추가
+
+- ValidationReportPanel에 층별 뷰 지원 (현재는 단일 층 기준 리포트)
+- 리포트에서 특정 실 선택 시 캔버스 해당 실 하이라이트 연동
 
 ---
 
