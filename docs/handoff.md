@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Claude Code (branch: claude/diff-report-export)
+Codex (branch: codex/room-count-report-entry)
 
 ---
 
@@ -360,16 +360,55 @@ No. 신규 파일만 추가, 기존 타입 변경 없음.
 
 ## Next Work For Codex
 
-### 1. `ValidationReportPanel`에서 리포트 PDF 내보내기
+### 1. `room_count` 수정 입력 로직 보강
 
-- `plainText`를 사용해 PDF/Word 내보내기 기능 추가
-- 가능하면 섹션 구조 유지
+- 이번 Codex 작업에서 `room_count`의 "적용" 로직은 구현됨.
+- 남은 작업: `GuidelineDiffPanel`의 "수정" 입력에서 개수 값을 넣었을 때도 동일한 room instance 증감 로직을 쓰도록 연결.
 
-### 2. 확정 GuidelineItem의 면적값 반영 UI
+### 2. 리포트 진입점 UX 추가 검증
 
-- 현재 확정된 `GuidelineItem`은 관련 `rooms[]`, `connections[]`의 `status`에 반영됨
-- 다음 단계: `room_area`, `room_count`, `floor` 항목 확정 시 기존 room 값과 다를 경우 “적용/무시” 선택 UI 추가
-- AI 값이 사용자 확정값을 자동 덮어쓰지 않도록 diff preview 필요
+- SpaceChatPanel 검증 카드에 "리포트 보기" 버튼 연결 완료.
+- 브라우저에서 장시간 AI 응답 대기 시 자동화가 timeout될 수 있어, 실제 사용자 조작으로 한 번 더 확인 권장.
+
+---
+
+## Latest Codex Changes (codex/room-count-report-entry)
+
+### 사전 검증 및 병합
+
+- `claude/diff-report-export` 브랜치(PR #1)를 검증하고 `main`에 fast-forward 병합.
+- JSON import 시 `onGuidelineStateChange(importedGuidelineItems, restoredConfirmedIds)`가 호출되지 않던 문제 수정 후 병합.
+- `handlePDFUpload`의 `useCallback` dependency에 `onGuidelineStateChange` 추가해 lint 경고 제거.
+
+### 추가/변경
+
+**`components/FloorPlanCanvas.tsx`**
+- `handleDiffApply`에서 `room_count` diff 적용 로직 구현.
+- `parsedValue > 현재 동일 이름 실 수`: 같은 name/zone/floor/source/status 기반 room instance 추가.
+- `parsedValue < 현재 동일 이름 실 수`: 마지막 instance부터 제거.
+- room_count 적용 후 `autoLayout` 또는 `layoutByFloor` 재실행.
+- 제거된 room을 참조하는 connection과 pinned id 정리.
+
+**`components/SpaceChatPanel.tsx`**
+- `onOpenReportPanel?: () => void` prop 추가.
+- 검증 요약 카드 우측에 "리포트 보기" 버튼 추가.
+- 기존 "전체 보기" 버튼은 유지.
+
+**`app/page.tsx`**
+- `layoutReport`가 있을 때 `SpaceChatPanel`에 `onOpenReportPanel={() => setShowReportPanel(true)}` 연결.
+
+### Schema Changed
+
+No.
+
+### Verified
+
+- `npm run lint` passed with no warnings.
+- `npx tsc --noEmit` passed.
+- Test PDF was generated at `/private/tmp/talk-architect-test/guideline.pdf`.
+- `POST /api/parse-pdf` with the test PDF returned guidelineItems/rooms/relations successfully.
+- `GET http://127.0.0.1:3002/` returned HTTP 200.
+- Browser file upload automation could not complete because Codex In-app Browser reports file uploads are not supported; actual manual PDF upload should be checked once in the UI.
 
 ---
 

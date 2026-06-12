@@ -63,6 +63,7 @@ export default function Home() {
           connections={connections}
           validationIssues={validationIssues}
           onOpenValidationPanel={() => setShowValidationPanel(true)}
+          onOpenReportPanel={layoutReport ? () => setShowReportPanel(true) : undefined}
         />
       </div>
 

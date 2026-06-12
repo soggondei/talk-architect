@@ -128,6 +128,17 @@ function idsFromGuidelines(
   return ids;
 }
 
+function uniqueRoomId(baseId: string, rooms: Room[]) {
+  const existingIds = new Set(rooms.map((room) => room.id));
+  let index = 2;
+  let id = `${baseId}-${index}`;
+  while (existingIds.has(id)) {
+    index += 1;
+    id = `${baseId}-${index}`;
+  }
+  return id;
+}
+
 export default function FloorPlanCanvas({
   rooms, connections, onRoomsChange, onConnectionsChange, onGuidelineStateChange,
 }: Props) {
@@ -233,6 +244,57 @@ export default function FloorPlanCanvas({
   }, []);
 
   const handleDiffApply = useCallback((diff: GuidelineDiff) => {
+    if (diff.category === "room_count" && diff.parsedValue != null) {
+      const targetCount = Math.max(1, Math.floor(diff.parsedValue));
+      const baseRoom = rooms.find((room) => room.id === diff.roomId);
+      if (!baseRoom) return;
+
+      const sameNameRooms = rooms.filter((room) => room.name === baseRoom.name);
+      const otherRooms = rooms.filter((room) => room.name !== baseRoom.name);
+      const normalizedSameNameRooms = sameNameRooms.map((room) => ({
+        ...room,
+        count: 1,
+        totalArea: room.area,
+      }));
+
+      let adjustedSameNameRooms = normalizedSameNameRooms;
+      if (targetCount > adjustedSameNameRooms.length) {
+        const additions: Room[] = [];
+        for (let i = adjustedSameNameRooms.length; i < targetCount; i += 1) {
+          const id = uniqueRoomId(baseRoom.id, [...rooms, ...additions]);
+          additions.push({
+            ...baseRoom,
+            id,
+            count: 1,
+            totalArea: baseRoom.area,
+            x: baseRoom.x + 16 * (i - adjustedSameNameRooms.length + 1),
+            y: baseRoom.y + 16 * (i - adjustedSameNameRooms.length + 1),
+            status: "user_confirmed",
+          });
+        }
+        adjustedSameNameRooms = [...adjustedSameNameRooms, ...additions];
+      } else if (targetCount < adjustedSameNameRooms.length) {
+        adjustedSameNameRooms = adjustedSameNameRooms.slice(0, targetCount);
+      }
+
+      const nextRoomsBeforeLayout = [...otherRooms, ...adjustedSameNameRooms];
+      const nextRoomIds = new Set(nextRoomsBeforeLayout.map((room) => room.id));
+      const nextTotalArea = nextRoomsBeforeLayout.reduce((sum, room) => sum + room.totalArea, 0);
+      const nextRooms = multiFloor
+        ? layoutByFloor(nextRoomsBeforeLayout, nextTotalArea)
+        : autoLayout(nextRoomsBeforeLayout, nextTotalArea);
+
+      onRoomsChange(nextRooms);
+      onConnectionsChange(
+        connections.filter(
+          (connection) => nextRoomIds.has(connection.fromId) && nextRoomIds.has(connection.toId)
+        )
+      );
+      setPinnedIds((prev) => new Set([...prev].filter((id) => nextRoomIds.has(id))));
+      setIgnoredDiffKeys((prev) => new Set([...prev, `${diff.itemId}-${diff.roomId}`]));
+      return;
+    }
+
     onRoomsChange(
       rooms.map((r) => {
         if (r.id !== diff.roomId) return r;
@@ -246,7 +308,7 @@ export default function FloorPlanCanvas({
       })
     );
     setIgnoredDiffKeys((prev) => new Set([...prev, `${diff.itemId}-${diff.roomId}`]));
-  }, [rooms, onRoomsChange]);
+  }, [connections, multiFloor, onConnectionsChange, onRoomsChange, rooms]);
 
   const handleDiffEdit = useCallback((diff: GuidelineDiff, value: string) => {
     onRoomsChange(
