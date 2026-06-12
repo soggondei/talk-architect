@@ -23,6 +23,7 @@ const SEVERITY_META: Record<SectionSeverity, { icon: string; color: string; bg: 
 interface Props {
   report: LayoutReport;
   onClose: () => void;
+  onRoomFocus?: (roomId: string) => void;
 }
 
 // ── 인쇄용 HTML 생성 ─────────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ function QuoteBlock({ quotes }: { quotes: SectionQuote[] }) {
 
 // ── 컴포넌트 ─────────────────────────────────────────────────────────────────
 
-export default function ValidationReportPanel({ report, onClose }: Props) {
+export default function ValidationReportPanel({ report, onClose, onRoomFocus }: Props) {
   const [copied, setCopied] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(report.sections.filter((s) => s.severity !== "ok").map((s) => s.id))
@@ -348,8 +349,22 @@ export default function ValidationReportPanel({ report, onClose }: Props) {
               <div className="divide-y divide-gray-50">
                 {report.priorityActions.map((action) => {
                   const isCritical = action.severity === "critical";
+                  const firstRoomId = action.relatedRoomIds?.[0];
+                  const isClickable = !!firstRoomId && !!onRoomFocus;
                   return (
-                    <div key={action.rank} className="flex items-start gap-3 px-3.5 py-2.5">
+                    <div
+                      key={action.rank}
+                      className={`flex items-start gap-3 px-3.5 py-2.5 transition-colors ${
+                        isClickable ? "cursor-pointer hover:bg-gray-50 group" : ""
+                      }`}
+                      onClick={() => {
+                        if (isClickable && firstRoomId) {
+                          onRoomFocus(firstRoomId);
+                          onClose();
+                        }
+                      }}
+                      title={isClickable ? "클릭하면 캔버스에서 해당 실을 강조합니다" : undefined}
+                    >
                       <span
                         className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black mt-0.5"
                         style={{
@@ -359,7 +374,12 @@ export default function ValidationReportPanel({ report, onClose }: Props) {
                       >
                         {action.rank}
                       </span>
-                      <span className="text-xs text-gray-700 leading-snug">{action.label}</span>
+                      <span className="flex-1 text-xs text-gray-700 leading-snug">{action.label}</span>
+                      {isClickable && (
+                        <span className="text-[9px] text-gray-300 group-hover:text-indigo-400 transition-colors mt-0.5 flex-shrink-0">
+                          캔버스 ›
+                        </span>
+                      )}
                     </div>
                   );
                 })}

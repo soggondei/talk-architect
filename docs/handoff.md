@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Codex (branch: codex/room-count-report-entry)
+Claude Code (branch: claude/report-canvas-focus)
 
 ---
 
@@ -10,8 +10,11 @@ Codex (branch: codex/room-count-report-entry)
 
 | 역할 | 담당 |
 |---|---|
-| 추출 프롬프트, UX 흐름 설계, 리포트 문구, AI 관련 기능 제안 | **Claude Code** |
-| 스키마 구현, 검증 로직, UI 상태 일관성, 테스트, 안정적 구현 | **Codex** |
+| **기획 리드** — 기능 로드맵 결정, UX 흐름 설계, AI 프롬프트, 리포트 문구 | **Claude Code** |
+| **구현** — 스키마 구현, 검증 로직, UI 상태 일관성, 테스트, 안정적 구현 | **Codex** |
+
+> Claude Code가 메인을 잡고 Codex에게 구체적인 구현 태스크를 지시한다.
+> Codex는 `## Next Work For Codex` 섹션만 읽고 정확히 그 범위 안에서 구현한다.
 
 작업 전 반드시 이 파일을 읽고, 작업 후 반드시 이 파일을 업데이트할 것.
 data-schema.md의 핵심 필드를 변경할 경우 data-schema.md도 함께 업데이트.
@@ -136,20 +139,56 @@ No
 
 우선순위 순:
 
-### 1. 타입 검사 캐시 정리
+### 1. FloorPlanCanvas — `highlightRoomId` 하이라이트 렌더링
 
-`.next/types/* 2.ts` 중복 생성 캐시 때문에 `npx tsc --noEmit`가 소스와 무관하게 실패함.
-Next 개발 서버 캐시를 정리한 뒤 타입 검사 재실행 필요.
+**목적**: 리포트 패널에서 "수정 우선순위" 항목을 클릭하면 해당 room이 캔버스에서 강조 표시됨.
 
-### 2. GuidelineItem 확정값을 실제 데이터 흐름에 반영
+**인터페이스 (Claude Code가 이미 추가):**
+```ts
+// components/FloorPlanCanvas.tsx Props에 이미 추가됨
+highlightRoomId?: string | null;
+onHighlightClear?: () => void;
+```
 
-현재 `GuidelineReviewPanel`은 사용자 검토/확정 UI까지 구현됨.
-다음 단계는 확정된 guideline item이 `rooms[]`, `relations[]`, validation/report/export 흐름에 어떻게 반영되는지 명확히 연결하는 것.
+**구현 요구사항:**
+- `highlightRoomId`가 있는 room의 SVG `<rect>`에 두꺼운 outline 추가
+  - `stroke="#6366F1"` (인디고), `strokeWidth={3}`, `strokeDasharray="6 3"`
+  - 기존 zone stroke보다 위 레이어에 렌더링 (SVG에서 같은 rect에 두 번째 rect 오버레이 또는 `filter` 사용)
+- 자동 스크롤/뷰포트 이동은 불필요 (SVG 뷰포트 고정)
+- `useEffect`로 3초 후 `onHighlightClear?.()` 자동 호출해 포커스 해제
+- 의존성: `highlightRoomId`, `onHighlightClear`
 
-### 3. PDF 추출 결과 저장/내보내기 보강
+**테스트 방법:**
+1. 공간 프로그램 입력 → 필수 인접 조건 설정 → 인접 미충족 상태 만들기
+2. "리포트 [C/D]" 버튼 클릭 → 수정 우선순위 항목 클릭
+3. 패널이 닫히고 해당 room이 캔버스에서 인디고 outline으로 강조됨
+4. 3초 후 outline 자동 사라짐
 
-현재 전체 플랜 JSON 내보내기에 지침서 추출 원문, 확정 상태, source quote가 충분히 포함되는지 확인하고,
-DWG/Revit/Rhino 전 기본 셋팅 데이터로 재사용 가능한 형태로 보강.
+---
+
+### 2. GuidelineDiffPanel — "수정" 입력 room_count 연결
+
+**목적**: 현재 `handleDiffEdit`에서 room_count 타입 diff를 편집할 때 room instance 증감이 일어나지 않음.
+
+**현재 상태:**
+- `handleDiffApply`는 room_count diff를 room instance 증감으로 처리함 (codex/room-count-report-entry에서 구현)
+- `handleDiffEdit`는 사용자 직접 입력값으로 처리하는데, `room_count` case가 누락됨
+
+**구현 요구사항:**
+`FloorPlanCanvas.tsx`의 `handleDiffEdit` 내부에서 `diff.category === "room_count"` 처리 추가:
+```
+parsedCount = parseInt(userInputStr)
+handleDiffApply({ ...diff, parsedValue: parsedCount })
+```
+즉, 수정 입력도 apply 로직을 재사용하면 됨. 새 로직 불필요.
+
+---
+
+### Verified (이 섹션도 업데이트 필요)
+
+- `npm run lint` 통과 확인
+- `npx tsc --noEmit` 통과 확인  
+- 브라우저에서 하이라이트 동작 확인
 
 ---
 
@@ -369,6 +408,44 @@ No. 신규 파일만 추가, 기존 타입 변경 없음.
 
 - SpaceChatPanel 검증 카드에 "리포트 보기" 버튼 연결 완료.
 - 브라우저에서 장시간 AI 응답 대기 시 자동화가 timeout될 수 있어, 실제 사용자 조작으로 한 번 더 확인 권장.
+
+---
+
+## Latest Claude Code Changes (claude/report-canvas-focus)
+
+### 추가/변경
+
+**`lib/reportGenerator.ts`**
+- `PriorityAction`에 `relatedRoomIds?: string[]` 필드 추가
+- `buildPriorityActions`에서 모든 이슈의 `relatedRoomIds`를 PriorityAction에 그대로 전달
+
+**`components/ValidationReportPanel.tsx`**
+- Props에 `onRoomFocus?: (roomId: string) => void` 추가
+- 수정 우선순위 행: `relatedRoomIds[0]`가 있고 `onRoomFocus`가 있으면 클릭 가능
+- 클릭 시 `onRoomFocus(roomId)` 호출 후 `onClose()` — 리포트 닫고 캔버스로 이동
+- hover 상태에서 "캔버스 ›" 힌트 표시 (group/group-hover Tailwind 패턴)
+
+**`app/page.tsx`**
+- `focusedRoomId: string | null` 상태 추가
+- `ValidationReportPanel`에 `onRoomFocus` 연결 → `setFocusedRoomId` + `setShowReportPanel(false)`
+- `FloorPlanCanvas`에 `highlightRoomId={focusedRoomId}`, `onHighlightClear={() => setFocusedRoomId(null)}` 전달
+
+**`components/FloorPlanCanvas.tsx`**
+- Props 인터페이스에 `highlightRoomId?: string | null`, `onHighlightClear?: () => void` 추가
+- `useEffect`: `highlightRoomId` 변경 시 3초 후 `onHighlightClear?.()` 자동 호출 (포커스 자동 해제)
+- SVG 하이라이트 렌더링은 **Codex가 구현** (`## Next Work For Codex` 참고)
+
+### Verified
+
+- `npm run lint` 통과 (경고 없음)
+
+### Schema Changed
+
+No.
+
+### Branch
+
+`claude/report-canvas-focus`
 
 ---
 

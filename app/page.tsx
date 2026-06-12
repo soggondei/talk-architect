@@ -21,6 +21,7 @@ export default function Home() {
   const [showReportPanel, setShowReportPanel] = useState(false);
   const [projectName, setProjectName] = useState<string | undefined>();
   const [confirmedGuidelineItems, setConfirmedGuidelineItems] = useState<GuidelineItem[]>([]);
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
 
   const handleGuidelineStateChange = useCallback((items: GuidelineItem[], confirmedIds: Set<string>) => {
     setConfirmedGuidelineItems(items.filter((i) => confirmedIds.has(i.id)));
@@ -77,6 +78,8 @@ export default function Home() {
             onRoomsChange={setRooms}
             onConnectionsChange={setConnections}
             onGuidelineStateChange={handleGuidelineStateChange}
+            highlightRoomId={focusedRoomId}
+            onHighlightClear={() => setFocusedRoomId(null)}
           />
         </div>
 
@@ -154,6 +157,10 @@ export default function Home() {
         <ValidationReportPanel
           report={layoutReport}
           onClose={() => setShowReportPanel(false)}
+          onRoomFocus={(roomId) => {
+            setFocusedRoomId(roomId);
+            setShowReportPanel(false);
+          }}
         />
       )}
     </main>

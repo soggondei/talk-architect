@@ -37,6 +37,7 @@ export interface PriorityAction {
   severity: "critical" | "caution";
   label: string;
   target?: string;
+  relatedRoomIds?: string[];
 }
 
 export interface LayoutReport {
@@ -283,6 +284,7 @@ function buildPriorityActions(
         severity: "critical",
         label: `${roomName(fromId ?? "", rooms)} ↔ ${roomName(toId ?? "", rooms)} 인접 금지 위반 — 즉시 분리 배치 필요`,
         target: issue.relatedRoomIds?.join(","),
+        relatedRoomIds: issue.relatedRoomIds,
       });
     });
 
@@ -300,6 +302,7 @@ function buildPriorityActions(
         severity: "caution",
         label: `${roomName(fromId ?? "", rooms)} ↔ ${roomName(toId ?? "", rooms)} 인접 배치${reason ? ` (${reason})` : ""}`,
         target: issue.relatedRoomIds?.join(","),
+        relatedRoomIds: issue.relatedRoomIds,
       });
     });
 
@@ -312,6 +315,7 @@ function buildPriorityActions(
         severity: "critical",
         label: issue.title,
         target: issue.relatedRoomIds?.join(","),
+        relatedRoomIds: issue.relatedRoomIds,
       });
     });
 
@@ -323,6 +327,7 @@ function buildPriorityActions(
         rank: rank++,
         severity: "caution",
         label: issue.title + " — 지침서 원문과 대조 필요",
+        relatedRoomIds: issue.relatedRoomIds,
       });
     });
 

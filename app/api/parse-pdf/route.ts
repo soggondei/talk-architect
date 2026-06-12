@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8096,
+      max_tokens: 32000,
       messages: [
         {
           role: "user",
@@ -74,12 +74,22 @@ export async function POST(req: NextRequest) {
     const jsonText = extractJsonObject(text);
     if (!jsonText) {
       return NextResponse.json(
-        { error: "공간 정보를 추출할 수 없습니다", raw: text },
+        { error: "공간 정보를 추출할 수 없습니다. 지침서 형식을 확인하거나 다시 시도해주세요.", raw: text },
         { status: 422 }
       );
     }
 
-    const parsed = normalizeExtractionOutput(JSON.parse(jsonText), file.name);
+    let parsedJson: Partial<ExtractionOutput>;
+    try {
+      parsedJson = JSON.parse(jsonText);
+    } catch {
+      return NextResponse.json(
+        { error: "AI 응답 파싱에 실패했습니다. 지침서가 너무 복잡하면 페이지 수를 줄여서 다시 시도해주세요." },
+        { status: 422 }
+      );
+    }
+
+    const parsed = normalizeExtractionOutput(parsedJson, file.name);
     return NextResponse.json(parsed);
   } catch (err) {
     console.error("parse-pdf error:", err);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { Room, Connection, ZONE_COLORS, ZoneType, FloorType, FLOOR_INFO, FLOORS } from "@/lib/floorPlanTypes";
 import {
   CANVAS_W, CANVAS_H, QUAD_W, QUAD_H,
@@ -24,6 +24,9 @@ interface Props {
   onRoomsChange: (rooms: Room[]) => void;
   onConnectionsChange: (connections: Connection[]) => void;
   onGuidelineStateChange?: (items: GuidelineItem[], confirmedIds: Set<string>) => void;
+  /** 리포트에서 선택한 room ID — Codex가 SVG 하이라이트 렌더링 구현 */
+  highlightRoomId?: string | null;
+  onHighlightClear?: () => void;
 }
 
 type Mode = "select" | "connect" | "pin" | "delete";
@@ -141,6 +144,7 @@ function uniqueRoomId(baseId: string, rooms: Room[]) {
 
 export default function FloorPlanCanvas({
   rooms, connections, onRoomsChange, onConnectionsChange, onGuidelineStateChange,
+  highlightRoomId, onHighlightClear,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [mode, setMode] = useState<Mode>("select");
@@ -166,6 +170,13 @@ export default function FloorPlanCanvas({
   const [confirmedGuidelineIds, setConfirmedGuidelineIds] = useState<Set<string>>(new Set());
   const [showGuidelinePanel, setShowGuidelinePanel] = useState(false);
   const [ignoredDiffKeys, setIgnoredDiffKeys] = useState<Set<string>>(new Set());
+
+  // 리포트 → 캔버스 하이라이트: 3초 후 자동 해제 (SVG 렌더링은 Codex가 구현)
+  useEffect(() => {
+    if (!highlightRoomId) return;
+    const timer = setTimeout(() => onHighlightClear?.(), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightRoomId, onHighlightClear]);
 
   const sim = useForceSimulation(onRoomsChange);
 
