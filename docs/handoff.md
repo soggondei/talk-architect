@@ -2,7 +2,7 @@
 
 ## Latest Worker
 
-Claude Code (branch: claude/report-canvas-focus)
+Claude Code (branch: claude/report-canvas-focus, claude/dxf-export)
 
 ---
 
@@ -184,11 +184,57 @@ handleDiffApply({ ...diff, parsedValue: parsedCount })
 
 ---
 
-### Verified (이 섹션도 업데이트 필요)
+### 3. DXF 내보내기 — 층별 레이어 분리 (multiFloor 모드)
+
+**목적**: 층별뷰(`multiFloor=true`)일 때 DXF 파일에서 각 층을 별도 레이어로 구분해 AutoCAD/Rhino에서 층 단위 on/off 가능하게 함.
+
+**현재 상태 (`lib/dxfExporter.ts`):**
+- 단일 레이어 구조: 존(zone) 기준 레이어만 있음 (공용, 전용, 서비스, 동선, 코어)
+- `Room.floor` 필드 존재: `'B1' | '1F' | '2F' | '3F'`
+
+**구현 요구사항:**
+
+`lib/dxfExporter.ts`에서 `generateDXF` 시그니처 변경:
+```ts
+export function generateDXF(rooms: Room[], multiFloor?: boolean): string
+```
+
+`multiFloor=true`이면 레이어 이름을 `{floor}_{zone}` 복합 방식으로 변경:
+- 예: `B1_서비스`, `1F_공용`, `2F_전용`, `3F_코어`
+- 레이어 테이블에 사용된 `floor+zone` 조합만 등록
+- 기존 `ZONE_ACI` 색상 유지, 레이어 이름만 변경
+
+`downloadDXF` 시그니처도 변경:
+```ts
+export function downloadDXF(rooms: Room[], projectName?: string, multiFloor?: boolean): void
+```
+
+`FloorPlanCanvas.tsx`의 DXF 버튼 클릭 핸들러:
+```tsx
+onClick={() => downloadDXF(rooms, pdfSummary?.projectName, multiFloor)}
+```
+(`multiFloor`는 이미 컴포넌트 내 상태로 존재)
+
+**스케일 바 엔티티 추가 (보너스, 선택):**
+DXF 엔티티 섹션 끝에 LINE + TEXT로 스케일 바 추가:
+- 위치: x=0, y=-2m (캔버스 아래쪽)
+- 길이: 10m 또는 5m (총 폭에 맞게 선택)
+- TEXT: "0    10m" 또는 "0  5m"
+
+**테스트 방법:**
+1. PDF 업로드 후 층별뷰 전환 → `📐 DXF` 클릭
+2. 생성된 .dxf 파일을 AutoCAD/Rhino/ArchiCAD 또는 [LibreCAD](https://librecad.org/) 에서 열기
+3. 레이어 패널에서 `B1_서비스`, `1F_공용` 등 복합 레이어가 보이는지 확인
+4. 한국어 레이어 이름이 깨지지 않는지 확인
+
+---
+
+### Verified (Codex 완료 후 업데이트)
 
 - `npm run lint` 통과 확인
-- `npx tsc --noEmit` 통과 확인  
+- `npx tsc --noEmit` 통과 확인
 - 브라우저에서 하이라이트 동작 확인
+- DXF 파일 레이어 이름 한국어 인코딩 확인
 
 ---
 
@@ -411,7 +457,7 @@ No. 신규 파일만 추가, 기존 타입 변경 없음.
 
 ---
 
-## Latest Claude Code Changes (claude/report-canvas-focus)
+## Latest Claude Code Changes (claude/report-canvas-focus + dxf-export)
 
 ### 추가/변경
 
@@ -434,10 +480,35 @@ No. 신규 파일만 추가, 기존 타입 변경 없음.
 - Props 인터페이스에 `highlightRoomId?: string | null`, `onHighlightClear?: () => void` 추가
 - `useEffect`: `highlightRoomId` 변경 시 3초 후 `onHighlightClear?.()` 자동 호출 (포커스 자동 해제)
 - SVG 하이라이트 렌더링은 **Codex가 구현** (`## Next Work For Codex` 참고)
+- DXF 내보내기 버튼 추가: `📐 DXF` (emerald 색상), `rooms.length > 0`일 때 노출
+- `import { downloadDXF } from "@/lib/dxfExporter"` 추가
+
+**`lib/dxfExporter.ts` — 신규**
+- `generateDXF(rooms: Room[]): string` — DXF R2000(AC1015) 텍스트 생성
+- 픽셀→미터 스케일: `scale = sqrt(총실면적_m² / (CANVAS_W × CANVAS_H × 0.45))`
+- Y축 반전: `y_dxf = canvasH_m − room.y × scale` (캔버스 Y↓, DXF Y↑)
+- 존별 LAYER 테이블: 공용(5)/전용(2)/서비스(3)/동선(6)/코어(8) — AutoCAD Index Color
+- 실당 엔티티: LWPOLYLINE(닫힘 4꼭짓점) + TEXT(실명) + TEXT(면적㎡)
+- INSUNITS=6(미터), UTF-8 인코딩, CONTINUOUS 선종류
+- `downloadDXF(rooms, projectName?)`: 브라우저 파일 다운로드 트리거
+
+**`app/api/parse-pdf/route.ts`** (PDF 파싱 오류 수정)
+- `export const maxDuration = 300` 추가 (Next.js 라우트 세그먼트 5분 타임아웃)
+- `messages.create()` → `messages.stream().finalMessage()` (max_tokens>10min 스트리밍 필수)
+- `max_tokens: 8096` → `32000` (복잡한 지침서 처리)
+- JSON.parse 별도 try-catch + 한국어 에러 메시지
+
+**`lib/floorPlanUtils.ts`** (NaN 버그 수정)
+- `computeSize`: `Number.isFinite()` 가드로 NaN 방어
+- `layoutByFloor`: `safeRoomArea` 헬퍼로 totalArea NaN 전파 차단
+
+**`components/FloorPlanCanvas.tsx`** (NaN 버그 수정)
+- SVG `<rect>` x/y/width/height에 `Number.isFinite()` fallback 추가
 
 ### Verified
 
 - `npm run lint` 통과 (경고 없음)
+- `npx tsc --noEmit` 통과
 
 ### Schema Changed
 

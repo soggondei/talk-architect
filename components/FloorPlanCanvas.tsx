@@ -17,6 +17,7 @@ import { GuidelineItem } from "@/lib/guidelineExtractionPrompt";
 import GuidelineReviewPanel from "@/components/GuidelineReviewPanel";
 import { computeGuidelineDiffs, GuidelineDiff } from "@/lib/guidelineDiff";
 import GuidelineDiffPanel from "@/components/GuidelineDiffPanel";
+import { downloadDXF } from "@/lib/dxfExporter";
 
 interface Props {
   rooms: Room[];
@@ -972,6 +973,15 @@ export default function FloorPlanCanvas({
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 transition-colors"
               >
                 💾 JSON
+              </button>
+            )}
+            {rooms.length > 0 && (
+              <button
+                onClick={() => downloadDXF(rooms, pdfSummary?.projectName)}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                title="실제 면적 기준 CAD 파일(DXF)로 내보냅니다 — AutoCAD, Rhino, ArchiCAD에서 열 수 있습니다"
+              >
+                📐 DXF
               </button>
             )}
             <label className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 cursor-pointer transition-colors">
